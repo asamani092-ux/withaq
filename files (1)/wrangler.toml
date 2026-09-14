@@ -1,0 +1,24 @@
+name = "withaq"
+main = "worker/src/index.ts"
+compatibility_date = "2026-05-01"
+
+[assets]
+directory = "web"
+binding = "ASSETS"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "withaq"
+database_id = "ضع-معرّف-قاعدتك-هنا"   # wrangler d1 create withaq
+
+[[r2_buckets]]
+binding = "BUCKET"
+bucket_name = "withaq-files"            # wrangler r2 bucket create withaq-files
+
+[vars]
+SESSION_DAYS = "30"
+
+# النطاق:
+# [[routes]]
+# pattern = "withaq.sam-dev.win"
+# custom_domain = true
