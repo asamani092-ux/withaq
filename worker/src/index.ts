@@ -23,6 +23,24 @@ const normPhone = (v: unknown) => String(v ?? '').replace(/\D/g, '').replace(/^9
 const validPhone = (p: string) => /^05\d{8}$/.test(p);
 const now = () => Date.now();
 
+const clientIp = (req: Request) =>
+  (req.headers.get('cf-connecting-ip') || req.headers.get('x-forwarded-for') || '')
+    .split(',')[0].trim() || 'unknown';
+
+/* أحداث تُضاف ولا تُستبدل. زمن العد: لوغاريتمي+خطي مع أحداث النافذة. */
+async function allowRate(env: Env, bucket: string, limit: number, windowMs: number): Promise<boolean> {
+  const t = now();
+  await env.DB.prepare('DELETE FROM rate_events WHERE created_at < ?').bind(t - windowMs * 2).run();
+  const row = await env.DB.prepare(
+    'SELECT COUNT(*) AS c FROM rate_events WHERE bucket = ? AND created_at >= ?'
+  ).bind(bucket, t - windowMs).first<{ c: number }>();
+  if ((row?.c ?? 0) >= limit) return false;
+  await env.DB.prepare('INSERT INTO rate_events (bucket, created_at) VALUES (?, ?)').bind(bucket, t).run();
+  return true;
+}
+const tooMany = (message = 'تجاوزت حد المحاولات، انتظر قليلًا') =>
+  json({ error: message }, 429, { 'retry-after': '60' });
+
 /* ---------- الجلسة ---------- */
 type Session = { phone: string; name: string; org: string; isAdmin: boolean };
 
@@ -71,6 +89,7 @@ export default {
         const phone = normPhone(b.phone);
         const name = String(b.name ?? '').trim();
         const org = String(b.org ?? '').trim();
+        if (!(await allowRate(env, `reg:${clientIp(req)}:${phone}`, 5, 15 * 60 * 1000))) return tooMany();
         if (!validPhone(phone)) return err('رقم غير صحيح — يبدأ بـ 05 ويتكون من 10 أرقام');
         if (name.length < 3) return err('اكتب اسمك كاملًا');
         if (org.length < 2) return err('اكتب اسم الجهة');
@@ -91,6 +110,7 @@ export default {
       if (p === '/api/login' && req.method === 'POST') {
         const b = await req.json<any>();
         const phone = normPhone(b.phone);
+        if (!(await allowRate(env, `login:${clientIp(req)}:${phone}`, 8, 15 * 60 * 1000))) return tooMany();
         if (!validPhone(phone)) return err('رقم غير صحيح');
         const u = await env.DB.prepare('SELECT phone,name,org,logo_key,logo_pos FROM users WHERE phone=?')
           .bind(phone).first<any>();
@@ -153,6 +173,8 @@ export default {
       if (fileMatch && req.method === 'GET') {
         const s = await readSession(req, env);
         if (!s) return err('يلزم تسجيل الدخول', 401);
+        if (!(await allowRate(env, `file:${clientIp(req)}:${s.phone}`, 40, 5 * 60 * 1000)))
+          return tooMany('تجاوزت حد التحميل، انتظر قليلًا');
         const t = await env.DB.prepare('SELECT r2_key FROM tracks WHERE id=? AND hidden=0').bind(fileMatch[1]).first<any>();
         if (!t) return err('المسار غير موجود', 404);
         const obj = await env.BUCKET.get(t.r2_key);

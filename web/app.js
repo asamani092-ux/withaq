@@ -63,7 +63,8 @@ async function isFront(doc,n,id){
   const k=id+':'+n; if(k in fcache) return fcache[k];
   const tc=await doc.getPage(n).then(p=>p.getTextContent());
   const txt=tc.items.map(i=>i.str).join(' ');
-  return fcache[k]=/مســـار|مســار/.test(txt)&&txt.includes('الحلقة');
+  const compact=txt.replace(/\s+/g,'');
+  return fcache[k]=(/مســـار|مســار|مسار/.test(txt)||compact.includes('مسار')) && (txt.includes('الحلقة')||compact.includes('الحلقة'));
 }
 
 /* توليد معاينة الوجه والظهر من الملف المرفوع — لا كتابة داخل المصدر. زمن أسوأ: خطي مع عدد الصفحات حتى إيجاد الورقتين، وذاكرة صفحة واحدة. */
