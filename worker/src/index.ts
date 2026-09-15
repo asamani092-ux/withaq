@@ -171,7 +171,13 @@ export default {
       if (peekMatch && req.method === 'GET') {
         const obj = await env.BUCKET.get(`preview/${peekMatch[1]}-${peekMatch[2]}.jpg`);
         if (!obj) return err('لا توجد معاينة', 404);
-        return new Response(obj.body, { headers: { 'content-type': 'image/jpeg', 'cache-control': 'public, max-age=86400' } });
+        return new Response(obj.body, {
+          headers: {
+            'content-type': 'image/jpeg',
+            'cache-control': 'public, max-age=120',
+            ...(obj.httpEtag ? { etag: obj.httpEtag } : {})
+          }
+        });
       }
 
       /* شعار المستخدم — نسخته وحده */
@@ -266,13 +272,33 @@ export default {
         ).bind(id, id, '—', key, now()).run();
         return json({ ok: true });
       }
+
+      /* معاينة الوجه/الظهر — يولّدها المتصفح بعد الرفع؛ العامل يخزّن فقط */
+      const prevMatch = p.match(/^\/api\/tracks\/([a-z0-9-]+)\/preview\/(front|back)$/i);
+      if (prevMatch && req.method === 'PUT') {
+        if (!(await admin())) return err('صلاحية مدير مطلوبة', 403);
+        const type = (req.headers.get('content-type') || '').split(';')[0].trim();
+        if (type !== 'image/jpeg' && type !== 'image/jpg') return err('يجب أن تكون الصورة JPEG');
+        const id = prevMatch[1];
+        const side = prevMatch[2].toLowerCase();
+        const t = await env.DB.prepare('SELECT id FROM tracks WHERE id=?').bind(id).first();
+        if (!t) return err('المسار غير موجود', 404);
+        const buf = await req.arrayBuffer();
+        if (buf.byteLength < 32) return err('الصورة فارغة');
+        if (buf.byteLength > 1_500_000) return err('حجم صورة المعاينة يتجاوز الحد');
+        await env.BUCKET.put(`preview/${id}-${side}.jpg`, buf, { httpMetadata: { contentType: 'image/jpeg' } });
+        return json({ ok: true });
+      }
+
       if (p.match(/^\/api\/tracks\/[a-z0-9-]+$/i) && req.method === 'PATCH') {
         if (!(await admin())) return err('صلاحية مدير مطلوبة', 403);
         const id = p.split('/').pop()!;
         const b = await req.json<any>();
+        const pages = b.pages === undefined || b.pages === null ? null : Number(b.pages);
+        if (pages !== null && (!Number.isInteger(pages) || pages < 1 || pages > 5000)) return err('عدد الصفحات غير صحيح');
         await env.DB.prepare(
-          'UPDATE tracks SET name=COALESCE(?,name), daily=COALESCE(?,daily), hidden=COALESCE(?,hidden), sort=COALESCE(?,sort), updated_at=? WHERE id=?'
-        ).bind(b.name ?? null, b.daily ?? null, b.hidden === undefined ? null : (b.hidden ? 1 : 0), b.sort ?? null, now(), id).run();
+          'UPDATE tracks SET name=COALESCE(?,name), daily=COALESCE(?,daily), hidden=COALESCE(?,hidden), sort=COALESCE(?,sort), pages=COALESCE(?,pages), updated_at=? WHERE id=?'
+        ).bind(b.name ?? null, b.daily ?? null, b.hidden === undefined ? null : (b.hidden ? 1 : 0), b.sort ?? null, pages, now(), id).run();
         return json({ ok: true });
       }
 

@@ -31,7 +31,8 @@ const api={
   users:    ()      => call('/api/users').then(d=>d.users),
   adminTracks:()    => call('/api/tracks?all=1').then(d=>d.tracks),
   patchTrack:(id,b) => call('/api/tracks/'+id,{method:'PATCH',body:b}),
-  putTrackFile:(id,f)=> call('/api/tracks/'+id+'/file',{method:'PUT',raw:f,type:'application/pdf'})
+  putTrackFile:(id,f)=> call('/api/tracks/'+id+'/file',{method:'PUT',raw:f,type:'application/pdf'}),
+  putPreview:(id,side,blob)=> call('/api/tracks/'+id+'/preview/'+side,{method:'PUT',raw:blob,type:'image/jpeg'})
 };
 
 /* ---------- أدوات ---------- */
@@ -39,7 +40,7 @@ const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
 let tT; const toast=m=>{const t=$('#toast');t.textContent=m;t.style.display='block';clearTimeout(tT);tT=setTimeout(()=>t.style.display='none',2800)};
 const normPhone=v=>String(v||'').replace(/\D/g,'').replace(/^966/,'0').slice(0,10);
 const validPhone=p=>/^05\d{8}$/.test(p);
-let logoVer=0;
+let logoVer=0, peekVer=0;
 const logoUrl=()=>me?.logo?'/api/my-logo?v='+logoVer:null;
 
 let pdfjs=null;
@@ -63,6 +64,42 @@ async function isFront(doc,n,id){
   const tc=await doc.getPage(n).then(p=>p.getTextContent());
   const txt=tc.items.map(i=>i.str).join(' ');
   return fcache[k]=/مســـار|مســار/.test(txt)&&txt.includes('الحلقة');
+}
+
+/* توليد معاينة الوجه والظهر من الملف المرفوع — لا كتابة داخل المصدر. زمن أسوأ: خطي مع عدد الصفحات حتى إيجاد الورقتين، وذاكرة صفحة واحدة. */
+async function uploadPreviews(id, buf){
+  const L=await lib();
+  Object.keys(fcache).forEach(k=>{ if(k.startsWith(id+':')) delete fcache[k]; });
+  delete docs[id];
+  const doc=await L.getDocument({data:new Uint8Array(buf)}).promise;
+  try{
+    await api.patchTrack(id,{pages:doc.numPages});
+    let front=0, back=0;
+    for(let n=1;n<=doc.numPages;n++){
+      const f=await isFront(doc,n,id);
+      if(f && !front) front=n;
+      else if(!f && !back) back=n;
+      if(front && back) break;
+    }
+    if(!back) back=1;
+    if(!front) front=Math.min(2, doc.numPages);
+    const blobFor=async n=>{
+      const page=await doc.getPage(n);
+      const base=page.getViewport({scale:1});
+      const vp=page.getViewport({scale:Math.min(820/base.width, 1.35)});
+      const c=document.createElement('canvas');
+      c.width=vp.width; c.height=vp.height;
+      await page.render({canvasContext:c.getContext('2d',{alpha:false}), viewport:vp}).promise;
+      const blob=await new Promise((ok,no)=>c.toBlob(b=>b?ok(b):no(new Error('تعذّر توليد الصورة')), 'image/jpeg', .84));
+      c.width=c.height=0;
+      return blob;
+    };
+    await api.putPreview(id,'back', await blobFor(back));
+    await api.putPreview(id,'front', await blobFor(front));
+    peekVer++;
+  }finally{
+    await doc.destroy();
+  }
 }
 
 /* ---------- الحالة ---------- */
@@ -99,7 +136,7 @@ function paintChrome(){
 function renderTracks(host,guest){
   host.innerHTML=TRACKS.map(t=>`
     <button class="track" data-id="${t.id}">
-      <span class="thumb"><img src="/api/peek/${t.id}/front" alt="" loading="lazy" onerror="this.remove()"><span class="badge">${t.daily}</span></span>
+      <span class="thumb"><img src="/api/peek/${t.id}/front?v=${peekVer}" alt="" loading="lazy" onerror="this.remove()"><span class="badge">${t.daily}</span></span>
       <span class="body"><h3>${t.name}</h3>
         <span class="meta">${t.pages??'—'} صفحة · ثلاثة مستويات</span>
         <span class="go">${guest?'معاينة ورقتين':'تصفّح وطباعة'}</span></span>
@@ -121,7 +158,7 @@ function openPeek(t){
   $('#vCount').textContent=PEEK.length; $('#vPage').max=PEEK.length; $('#vPage').value=1;
   $('#vStage').innerHTML=PEEK.map((side,i)=>`
     <div class="pg-box" style="width:min(820px,100%)">
-      <img src="/api/peek/${t.id}/${side}" alt="" style="width:100%;display:block;border-radius:4px">
+      <img src="/api/peek/${t.id}/${side}?v=${peekVer}" alt="" style="width:100%;display:block;border-radius:4px">
       <span class="side">${side==='front'?'وجه':'ظهر'}</span>
       <span class="num">${i+1} / ${PEEK.length}</span>
     </div>`).join('')+
@@ -272,7 +309,7 @@ function printPeek(){
   const w=printWindow(V.track.name,PEEK.length); if(!w) return;
   PEEK.forEach(side=>{
     const img=w.document.createElement('img');
-    img.src=location.origin+`/api/peek/${V.track.id}/${side}`;
+    img.src=location.origin+`/api/peek/${V.track.id}/${side}?v=${peekVer}`;
     w.document.body.appendChild(img);
   });
   setTimeout(()=>{w.document.querySelector('.s')?.remove();w.focus();w.print()},900);
@@ -461,7 +498,14 @@ function paintAdminTracks(){
       if(f.type && f.type!=='application/pdf'){ toast('يجب أن يكون الملف PDF'); return; }
       if(!confirm('سيظهر الملف الجديد لجميع المستخدمين فورًا، ويبقى شعار كل مستخدم على نسخته دون أن يُكتب داخل الملف. أتؤكد الاستبدال؟')) return;
       busy(true);
-      try{ await api.putTrackFile(id,f); await paintAdmin(); toast('استُبدل الملف'); }
+      const buf=await f.arrayBuffer();
+      try{
+        await api.putTrackFile(id, new Blob([buf],{type:'application/pdf'}));
+        try{ await uploadPreviews(id,buf); toast('استُبدل الملف وحُدّثت المعاينة'); }
+        catch(e){ toast('استُبدل الملف وتعذّر توليد المعاينة: '+e.message); }
+        await paintAdmin();
+        await syncPublicTracks();
+      }
       catch(e){ toast(e.message); busy(false); }
     };
   });
