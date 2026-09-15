@@ -143,6 +143,11 @@ th,td{text-align:right;padding:9px 6px;border-bottom:1px solid var(--line)}
 th{color:var(--muted);font-weight:600;font-size:13.5px}
 .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--navy);color:#fff;padding:11px 22px;border-radius:var(--r-pill);z-index:95;display:none;font-size:15px;box-shadow:0 12px 30px rgba(7,44,73,.32)}
 footer{text-align:center;color:var(--muted);font-size:13.5px;padding:24px 16px 38px}
+.track-admin{border:1px solid var(--line);border-radius:14px;padding:12px;margin-bottom:10px;background:#faf8f5}
+.track-admin .ta-top{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px}
+.track-admin .ta-top b{flex:1;min-width:120px}
+.track-admin .ta-id{font-size:12.5px;color:var(--muted)}
+.track-admin .ta-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
 @media print{body>*{display:none!important}}
 </style>
 </head>
@@ -256,7 +261,7 @@ footer{text-align:center;color:var(--muted);font-size:13.5px;padding:24px 16px 3
 <!-- لوحة المدير -->
 <div class="sheet" id="adminSheet">
   <div class="panel">
-    <div class="head"><div><h3>لوحة المدير</h3><p>التحكم في الطباعة والمديرين وسجل المسجَّلين.</p></div>
+    <div class="head"><div><h3>لوحة المدير</h3><p>التحكم في المسارات والطباعة والمديرين وسجل المسجَّلين.</p></div>
       <button class="icon-btn" data-close-admin><svg viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button></div>
     <div class="body">
       <div class="block">
@@ -264,6 +269,11 @@ footer{text-align:center;color:var(--muted);font-size:13.5px;padding:24px 16px 3
         <p id="printState">—</p>
         <div class="rowx"><span class="flag off" id="printFlag"><b></b><span>مقفلة</span></span>
           <button class="btn btn-a" id="printToggle">تبديل الحالة</button></div>
+      </div>
+      <div class="block">
+        <h4>المسارات</h4>
+        <p>استبدال الملف يظهر للجميع فورًا. شعار كل مستخدم يبقى على نسخته ولا يُكتب داخل الملف.</p>
+        <div id="tracksAdmin"></div>
       </div>
       <div class="block">
         <h4>المديرون</h4>

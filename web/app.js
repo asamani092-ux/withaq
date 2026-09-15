@@ -28,7 +28,10 @@ const api={
   admins:   ()      => call('/api/admins').then(d=>d.admins),
   addAdmin: (phone) => call('/api/admins',{method:'POST',body:{phone}}),
   delAdmin: (phone) => call('/api/admins/'+phone,{method:'DELETE'}),
-  users:    ()      => call('/api/users').then(d=>d.users)
+  users:    ()      => call('/api/users').then(d=>d.users),
+  adminTracks:()    => call('/api/tracks?all=1').then(d=>d.tracks),
+  patchTrack:(id,b) => call('/api/tracks/'+id,{method:'PATCH',body:b}),
+  putTrackFile:(id,f)=> call('/api/tracks/'+id+'/file',{method:'PUT',raw:f,type:'application/pdf'})
 };
 
 /* ---------- أدوات ---------- */
@@ -391,6 +394,91 @@ $('#exportUsers').onclick=async()=>{
     a.download='withaq-users.csv'; a.click();
   }catch(e){ toast(e.message); }
 };
+const attr=s=>String(s??'').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');
+let adminTracks=[];
+async function syncPublicTracks(){
+  TRACKS=await api.tracks().catch(()=>TRACKS);
+  if(me) renderTracks($('#userTracks'),false);
+  else renderTracks($('#guestTracks'),true);
+}
+function paintAdminTracks(){
+  const host=$('#tracksAdmin');
+  if(!host) return;
+  if(!adminTracks.length){
+    host.innerHTML='<p style="color:var(--muted);margin:0">لا مسارات بعد</p>';
+    return;
+  }
+  host.innerHTML=adminTracks.map((t,i)=>`
+    <div class="track-admin" data-id="${attr(t.id)}">
+      <div class="ta-top">
+        <b>${attr(t.name)}</b>
+        <span class="ta-id">${attr(t.id)} · ${t.pages??'—'} صفحة</span>
+        <span class="flag${t.hidden?' off':''}"><b></b><span>${t.hidden?'مخفي':'ظاهر'}</span></span>
+      </div>
+      <div class="field"><label>الاسم</label>
+        <div class="ctrl"><input class="ta-name" value="${attr(t.name)}"></div></div>
+      <div class="field"><label>الوصف اليومي</label>
+        <div class="ctrl"><input class="ta-daily" value="${attr(t.daily)}"></div></div>
+      <div class="ta-actions">
+        <button class="btn btn-a ta-save" style="padding:8px 16px">حفظ</button>
+        <button class="btn btn-line ta-hide" style="padding:8px 16px">${t.hidden?'إظهار':'إخفاء'}</button>
+        <button class="btn btn-line ta-up" style="padding:8px 16px" ${i===0?'disabled':''}>أعلى</button>
+        <button class="btn btn-line ta-down" style="padding:8px 16px" ${i===adminTracks.length-1?'disabled':''}>أسفل</button>
+        <button class="btn btn-line ta-replace" style="padding:8px 16px">استبدال الملف</button>
+        <input type="file" accept="application/pdf" class="ta-file" hidden>
+      </div>
+    </div>`).join('');
+  host.querySelectorAll('.track-admin').forEach(row=>{
+    const id=row.dataset.id;
+    const busy=on=>{
+      row.querySelectorAll('button').forEach(b=>{
+        if(on){ b.dataset.prevDis=b.disabled?'1':'0'; b.disabled=true; }
+        else b.disabled=b.dataset.prevDis==='1';
+      });
+    };
+    row.querySelector('.ta-save').onclick=async()=>{
+      const name=row.querySelector('.ta-name').value.trim();
+      const daily=row.querySelector('.ta-daily').value.trim();
+      if(name.length<1){ toast('اكتب اسم المسار'); return; }
+      if(daily.length<1){ toast('اكتب الوصف اليومي'); return; }
+      busy(true);
+      try{ await api.patchTrack(id,{name,daily}); await paintAdmin(); await syncPublicTracks(); toast('حُفظ المسار'); }
+      catch(e){ toast(e.message); busy(false); }
+    };
+    row.querySelector('.ta-hide').onclick=async()=>{
+      const t=adminTracks.find(x=>x.id===id); if(!t) return;
+      busy(true);
+      try{ await api.patchTrack(id,{hidden:!t.hidden}); await paintAdmin(); await syncPublicTracks(); toast(t.hidden?'ظهر المسار':'أُخفي المسار'); }
+      catch(e){ toast(e.message); busy(false); }
+    };
+    row.querySelector('.ta-up').onclick=()=>reorderAdminTracks(id,-1);
+    row.querySelector('.ta-down').onclick=()=>reorderAdminTracks(id,1);
+    const file=row.querySelector('.ta-file');
+    row.querySelector('.ta-replace').onclick=()=>file.click();
+    file.onchange=async()=>{
+      const f=file.files[0]; file.value='';
+      if(!f) return;
+      if(f.type && f.type!=='application/pdf'){ toast('يجب أن يكون الملف PDF'); return; }
+      if(!confirm('سيظهر الملف الجديد لجميع المستخدمين فورًا، ويبقى شعار كل مستخدم على نسخته دون أن يُكتب داخل الملف. أتؤكد الاستبدال؟')) return;
+      busy(true);
+      try{ await api.putTrackFile(id,f); await paintAdmin(); toast('استُبدل الملف'); }
+      catch(e){ toast(e.message); busy(false); }
+    };
+  });
+}
+async function reorderAdminTracks(id,dir){
+  const i=adminTracks.findIndex(t=>t.id===id);
+  const j=i+dir;
+  if(i<0||j<0||j>=adminTracks.length) return;
+  const next=adminTracks.slice();
+  const [item]=next.splice(i,1);
+  next.splice(j,0,item);
+  try{
+    for(let k=0;k<next.length;k++) await api.patchTrack(next[k].id,{sort:k+1});
+    await paintAdmin();
+    await syncPublicTracks();
+  }catch(e){ toast(e.message); }
+}
 async function paintAdmin(){
   if(!me?.isAdmin) return;
   const f=$('#printFlag');
@@ -400,7 +488,9 @@ async function paintAdmin(){
     ?'المستخدمون يطبعون صفحة أو نطاقًا أو الملف كاملًا.'
     :'العرض فقط — زر الطباعة معطّل عند المستخدمين (المدير يطبع دائمًا، والمعاينة العامة تُطبع).';
   try{
-    const [admins,users]=await Promise.all([api.admins(),api.users()]);
+    const [admins,users,tracks]=await Promise.all([api.admins(),api.users(),api.adminTracks()]);
+    adminTracks=tracks;
+    paintAdminTracks();
     $('#adminList').innerHTML=admins.map(a=>`
       <div class="rowx" style="justify-content:space-between;border-bottom:1px solid var(--line);padding:7px 0">
         <span>${a.phone}</span>

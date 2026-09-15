@@ -138,8 +138,12 @@ export default {
       /* المسارات */
       if (p === '/api/tracks' && req.method === 'GET') {
         const s = await readSession(req, env);
+        const all = url.searchParams.get('all') === '1';
+        if (all && !s?.isAdmin) return err('صلاحية مدير مطلوبة', 403);
         const rows = await env.DB.prepare(
-          'SELECT id,name,daily,pages,hidden FROM tracks WHERE hidden=0 ORDER BY sort'
+          all
+            ? 'SELECT id,name,daily,pages,hidden,sort FROM tracks ORDER BY sort'
+            : 'SELECT id,name,daily,pages,hidden FROM tracks WHERE hidden=0 ORDER BY sort'
         ).all<any>();
         return json({ tracks: rows.results, signedIn: !!s });
       }
