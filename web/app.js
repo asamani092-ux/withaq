@@ -57,14 +57,19 @@ async function openPdf(id){
   docs[id]=await L.getDocument('/api/file/'+id).promise;
   return docs[id];
 }
-/* ورقة الوجه تُكتشف بمحتواها لا برقمها */
+/* ورقة الوجه تُكتشف بمحتواها لا برقمها: مسار+الحلقة، ووجه الحزب /1 مقابل ظهره /2 إن وُجدا. */
 const fcache={};
 async function isFront(doc,n,id){
   const k=id+':'+n; if(k in fcache) return fcache[k];
   const tc=await doc.getPage(n).then(p=>p.getTextContent());
   const txt=tc.items.map(i=>i.str).join(' ');
   const compact=txt.replace(/\s+/g,'');
-  return fcache[k]=(/مســـار|مســار|مسار/.test(txt)||compact.includes('مسار')) && (txt.includes('الحلقة')||compact.includes('الحلقة'));
+  const header=(/مســـار|مســار|مسار/.test(txt)||compact.includes('مسار')) && (txt.includes('الحلقة')||compact.includes('الحلقة'));
+  const wajh=/\d{1,3}\s*\/\s*1\b/.test(txt) || /\d{1,3}\/1(?!\d)/.test(compact);
+  const zahr=/\d{1,3}\s*\/\s*2\b/.test(txt) || /\d{1,3}\/2(?!\d)/.test(compact);
+  if(zahr && !wajh) return fcache[k]=false;
+  if(header && wajh) return fcache[k]=true;
+  return fcache[k]=header && !zahr;
 }
 
 /* توليد معاينة الوجه والظهر من الملف المرفوع — لا كتابة داخل المصدر. زمن أسوأ: خطي مع عدد الصفحات حتى إيجاد الورقتين، وذاكرة صفحة واحدة. */

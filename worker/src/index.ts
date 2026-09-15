@@ -89,7 +89,9 @@ export default {
         const phone = normPhone(b.phone);
         const name = String(b.name ?? '').trim();
         const org = String(b.org ?? '').trim();
-        if (!(await allowRate(env, `reg:${clientIp(req)}:${phone}`, 5, 15 * 60 * 1000))) return tooMany();
+        const ip = clientIp(req);
+        if (!(await allowRate(env, `reg-ip:${ip}`, 10, 15 * 60 * 1000))) return tooMany();
+        if (!(await allowRate(env, `reg:${ip}:${phone}`, 5, 15 * 60 * 1000))) return tooMany();
         if (!validPhone(phone)) return err('رقم غير صحيح — يبدأ بـ 05 ويتكون من 10 أرقام');
         if (name.length < 3) return err('اكتب اسمك كاملًا');
         if (org.length < 2) return err('اكتب اسم الجهة');
@@ -110,7 +112,9 @@ export default {
       if (p === '/api/login' && req.method === 'POST') {
         const b = await req.json<any>();
         const phone = normPhone(b.phone);
-        if (!(await allowRate(env, `login:${clientIp(req)}:${phone}`, 8, 15 * 60 * 1000))) return tooMany();
+        const ip = clientIp(req);
+        if (!(await allowRate(env, `login-ip:${ip}`, 20, 15 * 60 * 1000))) return tooMany();
+        if (!(await allowRate(env, `login:${ip}:${phone}`, 8, 15 * 60 * 1000))) return tooMany();
         if (!validPhone(phone)) return err('رقم غير صحيح');
         const u = await env.DB.prepare('SELECT phone,name,org,logo_key,logo_pos FROM users WHERE phone=?')
           .bind(phone).first<any>();
