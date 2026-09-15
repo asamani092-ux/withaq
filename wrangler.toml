@@ -9,7 +9,7 @@ binding = "ASSETS"
 [[d1_databases]]
 binding = "DB"
 database_name = "withaq"
-database_id = "ضع-معرّف-قاعدتك-هنا"   # wrangler d1 create withaq
+database_id = "06a2f9e9-09d2-4396-a927-b08826609f70"   # wrangler d1 create withaq
 
 [[r2_buckets]]
 binding = "BUCKET"
