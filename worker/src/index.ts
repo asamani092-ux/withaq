@@ -249,6 +249,32 @@ export default {
         return json({ ok: true });
       }
 
+      /* ---------- المقترحات ---------- */
+      /* إرسال مقترح: جلسة مسجّلة، حد معدّل، إضافة تراكمية. */
+      if (p === '/api/suggestions' && req.method === 'POST') {
+        const s = await readSession(req, env);
+        if (!s) return err('يلزم تسجيل الدخول', 401);
+        if (!(await allowRate(env, `sugg:${clientIp(req)}:${s.phone}`, 5, 10 * 60 * 1000)))
+          return tooMany('تجاوزت حد إرسال المقترحات، انتظر قليلًا');
+        const body = String((await req.json<any>()).text ?? '').trim();
+        if (body.length < 3) return err('اكتب مقترحك (٣ أحرف على الأقل)');
+        if (body.length > 2000) return err('المقترح طويل — الحد ٢٠٠٠ حرف');
+        await env.DB.prepare('INSERT INTO suggestions (phone, body, created_at) VALUES (?,?,?)')
+          .bind(s.phone, body, now()).run();
+        return json({ ok: true });
+      }
+      /* قراءة المقترحات: مدير فقط. الاسم/الجهة بربط users، أعمدة مطلوبة فقط. */
+      if (p === '/api/suggestions' && req.method === 'GET') {
+        const s = await readSession(req, env);
+        if (!s?.isAdmin) return err('صلاحية مدير مطلوبة', 403);
+        const r = await env.DB.prepare(
+          `SELECT g.id, g.phone, g.body, g.created_at, u.name, u.org
+             FROM suggestions g LEFT JOIN users u ON u.phone = g.phone
+            ORDER BY g.created_at DESC LIMIT 5000`
+        ).all<any>();
+        return json({ suggestions: r.results });
+      }
+
       /* ---------- لوحة المدير ---------- */
       const admin = async () => {
         const s = await readSession(req, env);

@@ -39,12 +39,43 @@ const api={
   adminTracks:()    => call('/api/tracks?all=1').then(d=>d.tracks),
   patchTrack:(id,b) => call('/api/tracks/'+id,{method:'PATCH',body:b}),
   putTrackFile:(id,f)=> call('/api/tracks/'+id+'/file',{method:'PUT',raw:f,type:'application/pdf'}),
-  putPreview:(id,side,blob)=> call('/api/tracks/'+id+'/preview/'+side,{method:'PUT',raw:blob,type:'image/jpeg'})
+  putPreview:(id,side,blob)=> call('/api/tracks/'+id+'/preview/'+side,{method:'PUT',raw:blob,type:'image/jpeg'}),
+  addSuggestion:(text)=> call('/api/suggestions',{method:'POST',body:{text}}),
+  suggestions:()    => call('/api/suggestions').then(d=>d.suggestions)
 };
 
 /* ---------- أدوات ---------- */
 const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
 let tT; const toast=m=>{const t=$('#toast');t.textContent=m;t.style.display='block';clearTimeout(tT);tT=setTimeout(()=>t.style.display='none',2800)};
+
+/* نوافذ النظام: تأكيد/تنبيه بنفس تصميم الألواح — بديل confirm/alert الأصليين. زمن O(1). */
+let dlgResolve=null;
+function closeDlg(v){ $('#dlgSheet').classList.remove('on'); const r=dlgResolve; dlgResolve=null; if(r) r(v); }
+function openDlg({title, body='', sub='', actions}){
+  $('#dlgTitle').textContent=title;
+  const subEl=$('#dlgSub'); if(sub){ subEl.textContent=sub; subEl.classList.remove('hidden'); } else subEl.classList.add('hidden');
+  $('#dlgBody').textContent=body;
+  const host=$('#dlgActions'); host.innerHTML='';
+  actions.forEach(a=>{
+    const b=document.createElement('button');
+    b.className='btn '+(a.kind||'btn-line'); b.style.padding='9px 18px'; b.textContent=a.label;
+    b.onclick=()=>closeDlg(a.value); host.appendChild(b);
+  });
+  $('#dlgSheet').classList.add('on');
+}
+function sheetConfirm({title, body, confirmText='تأكيد', cancelText='إلغاء', danger=false}){
+  return new Promise(res=>{ dlgResolve=res; openDlg({title, body, actions:[
+    {label:cancelText, kind:'btn-line', value:false},
+    {label:confirmText, kind:danger?'btn-a':'btn-a', value:true}
+  ]}); });
+}
+function sheetAlert({title, body, okText='حسنًا'}){
+  return new Promise(res=>{ dlgResolve=res; openDlg({title, body, actions:[
+    {label:okText, kind:'btn-a', value:true}
+  ]}); });
+}
+$('#dlgSheet').onclick=e=>{ if(e.target.id==='dlgSheet') closeDlg(false); };
+document.addEventListener('keydown',e=>{ if(e.key==='Escape' && $('#dlgSheet').classList.contains('on')) closeDlg(false); });
 const normPhone=v=>String(v||'').replace(/\D/g,'').replace(/^966/,'0').slice(0,10);
 const validPhone=p=>/^05\d{8}$/.test(p);
 let logoVer=0, peekVer=0;
@@ -169,20 +200,20 @@ function renderTracks(host,guest){
 
 /* ---------- معاينة الزائر ---------- */
 function openPeek(t){
-  V.track=t; V.mode='peek'; V.doc=null; V.holders=[];
+  V.track=t; V.mode='peek'; V.doc=null; V.holders=[]; V.cur=1;
   $('#viewer').classList.add('on');
   $('#vTitle').innerHTML=`${t.name} <small>معاينة ورقتين</small>`;
   $('#vLogo').classList.add('hidden');
-  $('#printAll').classList.add('hidden');
   $('#vPrint').disabled=false;
   $('#vCount').textContent=PEEK.length; $('#vPage').max=PEEK.length; $('#vPage').value=1;
   $('#vStage').innerHTML=PEEK.map((side,i)=>`
-    <div class="pg-box" style="width:min(820px,100%)">
+    <div class="pg-box" data-n="${i+1}" style="width:min(820px,100%)">
       <img src="/api/peek/${t.id}/${side}?v=${peekVer}" alt="" style="width:100%;display:block;border-radius:4px">
       <span class="side">${side==='front'?'وجه':'ظهر'}</span>
       <span class="num">${i+1} / ${PEEK.length}</span>
     </div>`).join('')+
     `<p style="color:#64798a;font-size:14.5px">ورقتان من ${t.pages??'—'} — سجّل لفتح الملف كاملًا وإضافة شعارك.</p>`;
+  V.holders=[...$('#vStage').querySelectorAll('.pg-box')];
 }
 
 /* ---------- العارض الكامل ---------- */
@@ -198,7 +229,6 @@ async function openViewer(track){
   catch(e){ $('#vStage').innerHTML='<p style="color:#a33;text-align:center;max-width:44ch">تعذّر فتح الملف. تأكد أنك مسجّل الدخول وأن الملف مرفوع إلى التخزين.</p>'; return; }
   $('#vCount').textContent=V.doc.numPages; $('#vPage').max=V.doc.numPages;
   $('#vLogo').classList.remove('hidden');
-  $('#printAll').classList.remove('hidden');
   $('#vPrint').disabled=!(settings.printAllowed||me?.isAdmin);
   await layout(); goTo(1);
 }
@@ -365,22 +395,12 @@ document.addEventListener('keydown',e=>{
 });
 $('#vStage').addEventListener('contextmenu',e=>e.preventDefault());
 
-/* ---------- الطباعة ---------- */
-const pm=$('#vPrintMenu');
-$('#vPrint').onclick=()=>{ if(!$('#vPrint').disabled) pm.classList.toggle('open'); };
-document.addEventListener('click',e=>{ if(!pm.contains(e.target)) pm.classList.remove('open'); });
-pm.querySelectorAll('.list button').forEach(b=>b.onclick=async()=>{
-  pm.classList.remove('open');
-  if(V.mode==='peek'){ printPeek(); return; }
-  let from=V.cur,to=V.cur;
-  if(b.dataset.scope==='all'){from=1;to=V.doc.numPages}
-  if(b.dataset.scope==='range'){
-    const v=prompt(`نطاق الصفحات من 1 إلى ${V.doc.numPages} (مثال: 3-12):`); if(!v)return;
-    const m=v.match(/(\d+)\s*-\s*(\d+)/); if(!m){toast('صيغة غير صحيحة');return}
-    from=+m[1]; to=+m[2];
-  }
-  await printRange(from,to);
-});
+/* ---------- الطباعة (فردية تلقائيًا: الصفحة الظاهرة فقط، صفحة في كل أمر) ---------- */
+$('#vPrint').onclick=async()=>{
+  if($('#vPrint').disabled) return;
+  if(V.mode==='peek'){ printPeekSingle(); return; }
+  await printRange(V.cur, V.cur);
+};
 let printAbort=false;
 $('#printCancel').onclick=()=>{ printAbort=true; };
 function showPrint(m){ $('#printMsg').textContent=m; $('#printOverlay').classList.remove('hidden'); }
@@ -396,20 +416,20 @@ function printDoc(title,count){
   d.close();
   return d;
 }
-function printPeek(){
+/* معاينة الزائر: طباعة الصفحة الظاهرة وحدها (وجه أو ظهر). زمن O(1). */
+function printPeekSingle(){
   printAbort=false;
-  const d=printDoc(V.track.name,PEEK.length);
-  showPrint('جارٍ تجهيز ورقتين…');
-  PEEK.forEach(side=>{
-    const img=d.createElement('img');
-    img.src=location.origin+`/api/peek/${V.track.id}/${side}?v=${peekVer}`;
-    d.body.appendChild(img);
-  });
+  const side=PEEK[Math.max(0,Math.min(PEEK.length-1,V.cur-1))];
+  const d=printDoc(V.track.name,1);
+  showPrint('جارٍ تجهيز الصفحة…');
+  const img=d.createElement('img');
+  img.src=location.origin+`/api/peek/${V.track.id}/${side}?v=${peekVer}`;
+  d.body.appendChild(img);
   setTimeout(()=>{
     if(printAbort){ hidePrint(); toast('أُلغيت الطباعة'); return; }
     d.querySelector('.s')?.remove(); hidePrint();
     $('#printFrame').contentWindow.focus(); $('#printFrame').contentWindow.print();
-  },700);
+  },600);
 }
 const loadImg=src=>new Promise((ok,no)=>{const i=new Image();i.onload=()=>ok(i);i.onerror=no;i.src=src});
 /* الطباعة: صفحة تلو الأخرى بمقياس ١٫٣٥ ودفعات من ثلاث لترك الواجهة تستجيب. زمن خطي مع عدد الصفحات. */
@@ -496,15 +516,37 @@ $('#authGo').onclick=async()=>{
 };
 $('#btnLogout').onclick=async()=>{ await api.logout().catch(()=>{}); me=null; paintChrome(); toast('خرجت من حسابك'); };
 
+/* ---------- المقترحات ---------- */
+$('#suggSend').onclick=async()=>{
+  const el=$('#suggInput'); const text=el.value.trim();
+  if(text.length<3){ toast('اكتب مقترحك (٣ أحرف على الأقل)'); return; }
+  const btn=$('#suggSend'); btn.disabled=true;
+  try{
+    await api.addSuggestion(text); el.value='';
+    await sheetAlert({title:'وصل مقترحك', body:'شكرًا لك — سيطّلع عليه المدير مباشرة.'});
+  }catch(e){ toast(e.message); }
+  finally{ btn.disabled=false; }
+};
+
 /* ---------- شعارك ---------- */
 $('#btnSettings').onclick=()=>$('#logoSheet').classList.add('on');
 $$('[data-close-logo]').forEach(b=>b.onclick=()=>$('#logoSheet').classList.remove('on'));
 $('#logoSheet').onclick=e=>{ if(e.target.id==='logoSheet') $('#logoSheet').classList.remove('on'); };
 $('#logoPick').onclick=()=>$('#logoInput').click();
 $('#logoInput').onchange=async e=>{
-  const f=e.target.files[0]; if(!f) return;
-  if(f.size>900*1024){ toast('اختر صورة أقل من 900 كيلوبايت'); return; }
-  try{ await api.putLogo(f); me.logo='/api/my-logo'; logoVer++; paintLogo(); remountStamps(); toast('حُفظ شعارك — يظهر على أوراق الوجه'); }
+  const f=e.target.files[0]; if(!f){ return; }
+  if(f.size>900*1024){ e.target.value=''; toast('اختر صورة أقل من 900 كيلوبايت'); return; }
+  const ok=await sheetConfirm({
+    title:'قبل رفع الشعار',
+    body:'يظهر شعارك على أوراق الوجه في نسختك وحدك عند العرض والطباعة، ولا يُكتب داخل الملف الأصلي. هل تريد المتابعة؟',
+    confirmText:'متابعة الرفع', cancelText:'إلغاء'
+  });
+  e.target.value='';
+  if(!ok) return;
+  try{
+    await api.putLogo(f); me.logo='/api/my-logo'; logoVer++; paintLogo(); remountStamps();
+    await sheetAlert({title:'تم رفع شعارك', body:'سيظهر على أوراق الوجه في نسختك وحدها عند العرض والطباعة.'});
+  }
   catch(err){ toast(err.message); }
 };
 $('#logoReset').onclick=async()=>{
@@ -605,7 +647,12 @@ function paintAdminTracks(){
       const f=file.files[0]; file.value='';
       if(!f) return;
       if(f.type && f.type!=='application/pdf'){ toast('يجب أن يكون الملف PDF'); return; }
-      if(!confirm('سيظهر الملف الجديد لجميع المستخدمين فورًا، ويبقى شعار كل مستخدم على نسخته دون أن يُكتب داخل الملف. أتؤكد الاستبدال؟')) return;
+      const ok=await sheetConfirm({
+        title:'استبدال ملف المسار',
+        body:'سيظهر الملف الجديد لجميع المستخدمين فورًا، ويبقى شعار كل مستخدم على نسخته دون أن يُكتب داخل الملف. أتؤكد الاستبدال؟',
+        confirmText:'استبدال', cancelText:'إلغاء', danger:true
+      });
+      if(!ok) return;
       busy(true);
       const buf=await f.arrayBuffer();
       try{
@@ -641,9 +688,10 @@ async function paintAdmin(){
     ?'المستخدمون يطبعون صفحة أو نطاقًا أو الملف كاملًا.'
     :'العرض فقط — زر الطباعة معطّل عند المستخدمين (المدير يطبع دائمًا، والمعاينة العامة تُطبع).';
   try{
-    const [admins,users,tracks]=await Promise.all([api.admins(),api.users(),api.adminTracks()]);
+    const [admins,users,tracks,suggestions]=await Promise.all([api.admins(),api.users(),api.adminTracks(),api.suggestions()]);
     adminTracks=tracks;
     paintAdminTracks();
+    paintSuggestions(suggestions);
     $('#adminList').innerHTML=admins.map(a=>`
       <div class="rowx" style="justify-content:space-between;border-bottom:1px solid var(--line);padding:7px 0">
         <span>${a.phone}</span>
@@ -657,6 +705,18 @@ async function paintAdmin(){
       (users.length?users.map(u=>`<tr><td>${u.name}</td><td>${u.phone}</td><td>${u.org}</td></tr>`).join('')
                    :'<tr><td colspan="3" style="color:var(--muted)">لا مسجَّلين بعد</td></tr>');
   }catch(e){ toast(e.message); }
+}
+
+/* عرض المقترحات في لوحة المدير. زمن O(عدد المقترحات) للرسم. */
+function paintSuggestions(list){
+  const host=$('#suggList'); if(!host) return;
+  $('#suggCount').textContent=`(${list.length})`;
+  if(!list.length){ host.innerHTML='<p style="color:var(--muted);margin:0">لا مقترحات بعد</p>'; return; }
+  host.innerHTML=list.map(s=>`
+    <div style="border-bottom:1px solid var(--line);padding:9px 0">
+      <div style="font-size:13px;color:var(--muted)">${attr(s.name||'—')} · ${s.phone} · ${new Date(s.created_at).toLocaleDateString('ar-SA')}</div>
+      <div style="white-space:pre-wrap">${attr(s.body)}</div>
+    </div>`).join('');
 }
 
 let rt; window.addEventListener('resize',()=>{

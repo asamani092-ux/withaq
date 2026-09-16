@@ -196,6 +196,19 @@ footer{text-align:center;color:var(--muted);font-size:13.5px;padding:24px 16px 3
   <section class="screen" id="scUser">
     <div class="sec-head"><h2 id="hello"></h2><span id="userNote"></span></div>
     <div class="tracks" id="userTracks"></div>
+
+    <div class="sec-head"><h2>مقترحاتك</h2><span>رأيك يطوّر البرنامج — يصل إلى المدير مباشرة</span></div>
+    <div class="block">
+      <div class="field">
+        <label for="suggInput">اكتب مقترحك</label>
+        <div class="ctrl" style="align-items:flex-start">
+          <svg viewBox="0 0 24 24" style="margin-top:4px"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+          <textarea id="suggInput" rows="3" placeholder="مقترحك أو ملاحظتك…" maxlength="2000" style="border:none;background:none;outline:none;width:100%;color:var(--ink);resize:vertical;font-family:inherit;font-size:inherit"></textarea>
+        </div>
+        <span class="hint">لا تُرسل بيانات حسّاسة — يُحفظ الاسم والجوال المسجَّلان فقط.</span>
+      </div>
+      <div class="rowx"><button class="btn btn-a" id="suggSend">إرسال المقترح</button></div>
+    </div>
   </section>
 </main>
 
@@ -212,14 +225,7 @@ footer{text-align:center;color:var(--muted);font-size:13.5px;padding:24px 16px 3
     <button id="vZoomOut">−</button>
     <button id="vZoomIn">+</button>
     <button id="vLogo" class="hidden">ضبط الشعار</button>
-    <span class="menu" id="vPrintMenu">
-      <button id="vPrint">طباعة</button>
-      <span class="list">
-        <button data-scope="page">الصفحة الحالية</button>
-        <button data-scope="range">نطاق صفحات…</button>
-        <button data-scope="all" id="printAll">الملف كاملًا</button>
-      </span>
-    </span>
+    <button id="vPrint">طباعة</button>
   </div>
   <div class="vstage" id="vStage"></div>
 </div>
@@ -292,6 +298,22 @@ footer{text-align:center;color:var(--muted);font-size:13.5px;padding:24px 16px 3
         <div style="max-height:230px;overflow:auto"><table id="usersTable"></table></div>
         <div class="rowx" style="margin-top:10px"><button class="btn btn-line" id="exportUsers">تصدير CSV</button></div>
       </div>
+      <div class="block">
+        <h4>المقترحات <span id="suggCount" style="color:var(--muted);font-weight:400"></span></h4>
+        <p>مقترحات المستخدمين — الأحدث أولًا.</p>
+        <div id="suggList" style="max-height:260px;overflow:auto"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- نافذة نظام عامة: تنبيه/تأكيد بنفس تصميم الألواح -->
+<div class="sheet" id="dlgSheet">
+  <div class="panel" style="width:min(460px,100%)">
+    <div class="head"><div><h3 id="dlgTitle"></h3><p id="dlgSub" class="hidden"></p></div></div>
+    <div class="body">
+      <p id="dlgBody" style="margin:0;color:var(--ink);font-size:15px;line-height:1.75"></p>
+      <div class="rowx" id="dlgActions" style="justify-content:flex-end;margin-top:4px"></div>
     </div>
   </div>
 </div>
