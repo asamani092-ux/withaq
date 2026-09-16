@@ -22,7 +22,14 @@ const api={
   tracks:   ()      => call('/api/tracks').then(d=>d.tracks),
   settings: ()      => call('/api/settings'),
   setPrint: (v)     => call('/api/settings',{method:'POST',body:{printAllowed:v}}),
-  putLogo:  (f)     => call('/api/my-logo',{method:'PUT',raw:f,type:f.type}),
+  putLogo:  (f)     => {
+    let type=String(f.type||'').split(';')[0].trim().toLowerCase();
+    if(!type && /\.jpe?g$/i.test(f.name||'')) type='image/jpeg';
+    if(!type && /\.png$/i.test(f.name||'')) type='image/png';
+    if(!type && /\.svg$/i.test(f.name||'')) type='image/svg+xml';
+    if(type==='image/jpg') type='image/jpeg';
+    return call('/api/my-logo',{method:'PUT',raw:f,type});
+  },
   delLogo:  ()      => call('/api/my-logo',{method:'DELETE'}),
   savePos:  (p)     => call('/api/my-logo-pos',{method:'POST',body:p}),
   admins:   ()      => call('/api/admins').then(d=>d.admins),
@@ -51,20 +58,32 @@ async function lib(){
   return pdfjs;
 }
 const docs={};
-async function openPdf(id){
+async function openPdf(id,fresh){
+  if(fresh){
+    Object.keys(fcache).forEach(k=>{ if(k.startsWith(id+':')) delete fcache[k]; });
+    if(docs[id]){ try{ await docs[id].destroy(); }catch(_){ } delete docs[id]; }
+  }
   if(docs[id]) return docs[id];
   const L=await lib();
   docs[id]=await L.getDocument('/api/file/'+id).promise;
   return docs[id];
 }
-/* ورقة الوجه تُكتشف بمحتواها لا برقمها */
+/* ورقة الوجه تُكتشف بمحتواها لا برقمها.
+   الزمن: خطي مع عدد مقاطع النص في الصفحة، والكاشية ثابتة لكل صفحة.
+   الذاكرة: مدخل واحد لكل صفحة في الكاشية. */
 const fcache={};
+function arFold(s){
+  return String(s).replace(/[\s\u0640\u064B-\u065F\u0670\u06D6-\u06ED\u200B-\u200F\u202A-\u202E\uFEFF\uFFFD\u00A0]+/g,'');
+}
 async function isFront(doc,n,id){
   const k=id+':'+n; if(k in fcache) return fcache[k];
   const tc=await doc.getPage(n).then(p=>p.getTextContent());
-  const txt=tc.items.map(i=>i.str).join(' ');
-  const compact=txt.replace(/[\sـ]+/g,'');
-  return fcache[k]=compact.includes('مسار') && compact.includes('الحلقة');
+  const c=arFold(tc.items.map(i=>i.str).join(' '));
+  const hasMasar=/مسار(?!ات)/.test(c);
+  const hasName=c.includes('الاسم');
+  const hasKind=c.includes('أسطر')||c.includes('اسطر')||c.includes('وجه');
+  const hasHalqa=c.includes('الحلقة')||c.includes('الحلقه')||(c.includes('الح')&&c.includes('قة'));
+  return fcache[k]= !!(hasMasar && hasName && (hasKind || hasHalqa));
 }
 
 /* توليد معاينة الوجه والظهر من الملف المرفوع — لا كتابة داخل المصدر. زمن أسوأ: خطي مع عدد الصفحات حتى إيجاد الورقتين، وذاكرة صفحة واحدة. */
@@ -170,6 +189,8 @@ function openPeek(t){
 const V={doc:null,track:null,mode:'full',cur:1,zoom:1,scale:1,holders:[],obs:null,editing:false};
 async function openViewer(track){
   V.track=track; V.mode='full'; V.zoom=1; V.cur=1; V.editing=false;
+  Object.keys(fcache).forEach(k=>{ if(k.startsWith(track.id+':')) delete fcache[k]; });
+  $('#vLogo').textContent='ضبط الشعار';
   $('#viewer').classList.add('on');
   $('#vTitle').textContent=track.name;
   $('#vStage').innerHTML='<p style="color:#64798a">جارٍ الفتح…</p>';
@@ -212,47 +233,110 @@ async function renderPage(n){
   if(front&&me?.logo) mountStamp(box);
 }
 
+/* تصغير بلا إفراغ: تحديث المقاس ثم إعادة رسم الصفحات الظاهرة فقط. زمن خطي مع الصفحات الظاهرة. */
+async function applyZoom(){
+  if(!V.doc||!V.holders.length) return;
+  const stage=$('#vStage');
+  const vp=(await V.doc.getPage(1)).getViewport({scale:1});
+  const availW=Math.min(stage.clientWidth-28,980)*V.zoom;
+  const availH=(stage.clientHeight-60)*V.zoom;
+  V.scale=Math.min(availW/vp.width, availH/vp.height);
+  const w=Math.round(vp.width*V.scale), h=Math.round(vp.height*V.scale);
+  V.holders.forEach(box=>{
+    box.style.width=w+'px'; box.style.height=h+'px';
+    const c=box.querySelector('canvas');
+    if(c){ c.style.width=w+'px'; c.style.height=h+'px'; }
+    const st=box.querySelector('.stamp');
+    if(st) place(st,box,pos());
+  });
+  const sr=stage.getBoundingClientRect();
+  const vis=V.holders.filter(b=>{
+    const r=b.getBoundingClientRect();
+    return r.bottom>sr.top-400 && r.top<sr.bottom+400;
+  });
+  await Promise.all(vis.map(b=>sharpenPage(+b.dataset.n)));
+}
+async function sharpenPage(n){
+  const box=V.holders[n-1]; if(!box||!box.dataset.done) return;
+  const page=await V.doc.getPage(n);
+  const dpr=Math.min(window.devicePixelRatio||1,2);
+  const vp=page.getViewport({scale:V.scale*dpr});
+  const c=document.createElement('canvas'); c.width=vp.width; c.height=vp.height;
+  c.style.width=Math.round(vp.width/dpr)+'px'; c.style.height=Math.round(vp.height/dpr)+'px';
+  await page.render({canvasContext:c.getContext('2d'),viewport:vp}).promise;
+  const old=box.querySelector('canvas');
+  if(old) box.replaceChild(c,old); else box.prepend(c);
+}
+
 /* ---------- الشعار ---------- */
 const DEF={x:.06,y:.02,w:.16};
 const pos=()=>me?.pos||DEF;
 function mountStamp(box){
+  if(box.querySelector('.stamp')) return;
   const el=document.createElement('div');
   el.className='stamp'+(V.editing?' edit':'');
   el.innerHTML=`<img src="${logoUrl()}" alt=""><span class="hdl"></span>`;
   place(el,box,pos()); box.appendChild(el); bindDrag(el,box);
+}
+function remountStamps(){
+  if(!me?.logo||V.mode!=='full') return;
+  $$('.stamp img').forEach(img=>{ img.src=logoUrl(); });
+  V.holders.forEach(box=>{
+    if(box.querySelector('.side')?.textContent!=='وجه') return;
+    if(!box.querySelector('.stamp')) mountStamp(box);
+  });
 }
 function place(el,box,p){
   const W=box.clientWidth,H=box.clientHeight,w=W*p.w;
   el.style.width=w+'px'; el.style.height=(w*.55)+'px';
   el.style.right=(W*p.x)+'px'; el.style.top=(H*p.y)+'px';
 }
+let stampDrag=null, stampWinBound=false;
 function bindDrag(el,box){
-  let st=null,mode=null;
   const down=e=>{
     if(!V.editing) return; e.preventDefault();
-    mode=e.target.classList.contains('hdl')?'size':'move';
     const pt=e.touches?e.touches[0]:e;
-    st={x:pt.clientX,y:pt.clientY,p:{...pos()},W:box.clientWidth,H:box.clientHeight};
+    stampDrag={
+      mode:e.target.classList.contains('hdl')?'size':'move',
+      x:pt.clientX,y:pt.clientY,p:{...pos()},W:box.clientWidth,H:box.clientHeight
+    };
   };
+  el.addEventListener('mousedown',down);
+  el.addEventListener('touchstart',down,{passive:false});
+  if(stampWinBound) return;
+  stampWinBound=true;
   const move=e=>{
-    if(!st) return;
-    const pt=e.touches?e.touches[0]:e, dx=pt.clientX-st.x, dy=pt.clientY-st.y;
-    const p={...st.p};
-    if(mode==='move'){ p.x=Math.min(.8,Math.max(0,st.p.x-dx/st.W)); p.y=Math.min(.85,Math.max(0,st.p.y+dy/st.H)); }
-    else p.w=Math.min(.45,Math.max(.05,st.p.w-dx/st.W));
+    if(!stampDrag) return;
+    const pt=e.touches?e.touches[0]:e, dx=pt.clientX-stampDrag.x, dy=pt.clientY-stampDrag.y;
+    const p={...stampDrag.p};
+    if(stampDrag.mode==='move'){ p.x=Math.min(.8,Math.max(0,stampDrag.p.x-dx/stampDrag.W)); p.y=Math.min(.85,Math.max(0,stampDrag.p.y+dy/stampDrag.H)); }
+    else p.w=Math.min(.45,Math.max(.05,stampDrag.p.w-dx/stampDrag.W));
     me.pos=p; $$('.stamp').forEach(s=>place(s,s.parentElement,p));
   };
-  const up=async()=>{ if(!st)return; st=null; try{ await api.savePos(me.pos); }catch(e){ toast('تعذّر حفظ موضع الشعار'); } };
-  el.addEventListener('mousedown',down); el.addEventListener('touchstart',down,{passive:false});
-  window.addEventListener('mousemove',move); window.addEventListener('touchmove',move,{passive:false});
-  window.addEventListener('mouseup',up); window.addEventListener('touchend',up);
+  const up=async()=>{
+    if(!stampDrag) return; stampDrag=null;
+    try{ await api.savePos(me.pos); }catch(e){ toast('تعذّر حفظ موضع الشعار'); }
+  };
+  window.addEventListener('mousemove',move);
+  window.addEventListener('touchmove',move,{passive:false});
+  window.addEventListener('mouseup',up);
+  window.addEventListener('touchend',up);
 }
-$('#vLogo').onclick=()=>{
+$('#vLogo').onclick=async()=>{
   if(!me?.logo){ toast('ارفع شعارك أولًا'); return; }
-  V.editing=!V.editing;
-  $$('.stamp').forEach(s=>s.classList.toggle('edit',V.editing));
-  $('#vLogo').textContent=V.editing?'تم الضبط':'ضبط الشعار';
-  toast(V.editing?'اسحب الشعار، والمقبض لتغيير الحجم':'حُفظ موضع شعارك');
+  if(V.editing){
+    V.editing=false;
+    $$('.stamp').forEach(s=>s.classList.remove('edit'));
+    $('#vLogo').textContent='ضبط الشعار';
+    try{ await api.savePos(pos()); toast('حُفظ موضع شعارك'); }
+    catch(e){ toast('تعذّر حفظ موضع الشعار'); }
+  }else{
+    remountStamps();
+    V.editing=true;
+    $$('.stamp').forEach(s=>s.classList.add('edit'));
+    $('#vLogo').textContent='تم الضبط';
+    toast('اسحب الشعار، والمقبض لتغيير الحجم');
+  }
 };
 
 /* ---------- تنقّل ---------- */
@@ -264,8 +348,8 @@ function goTo(n){
 $('#vPrev').onclick=()=>goTo(V.cur-1);
 $('#vNext').onclick=()=>goTo(V.cur+1);
 $('#vPage').onchange=e=>goTo(+e.target.value);
-$('#vZoomIn').onclick=async()=>{if(!V.doc)return;V.zoom=Math.min(2.2,V.zoom+.2);await layout();goTo(V.cur)};
-$('#vZoomOut').onclick=async()=>{if(!V.doc)return;V.zoom=Math.max(.6,V.zoom-.2);await layout();goTo(V.cur)};
+$('#vZoomIn').onclick=async()=>{if(!V.doc)return;V.zoom=Math.min(2.2,V.zoom+.2);await applyZoom();goTo(V.cur)};
+$('#vZoomOut').onclick=async()=>{if(!V.doc)return;V.zoom=Math.max(.6,V.zoom-.2);await applyZoom();goTo(V.cur)};
 $('#vStage').addEventListener('scroll',()=>{
   if(!V.holders.length) return;
   const top=$('#vStage').scrollTop+70;
@@ -297,47 +381,71 @@ pm.querySelectorAll('.list button').forEach(b=>b.onclick=async()=>{
   }
   await printRange(from,to);
 });
-function printWindow(title,count){
-  const w=window.open('','_blank');
-  if(!w){ toast('المتصفح منع نافذة الطباعة'); return null; }
-  w.document.write(`<!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>${title}</title>
+let printAbort=false;
+$('#printCancel').onclick=()=>{ printAbort=true; };
+function showPrint(m){ $('#printMsg').textContent=m; $('#printOverlay').classList.remove('hidden'); }
+function hidePrint(){ $('#printOverlay').classList.add('hidden'); }
+function printDoc(title,count){
+  const f=$('#printFrame');
+  const d=f.contentDocument;
+  d.open();
+  d.write(`<!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>${title}</title>
     <style>@page{size:A4 portrait;margin:0}body{margin:0;font-family:sans-serif}
     .s{padding:16px;color:#072c49;font-size:15px}img{display:block;width:100%;page-break-after:always}</style>
     </head><body><p class="s">جارٍ تجهيز ${count} صفحة…</p></body></html>`);
-  w.document.close(); return w;
+  d.close();
+  return d;
 }
 function printPeek(){
-  const w=printWindow(V.track.name,PEEK.length); if(!w) return;
+  printAbort=false;
+  const d=printDoc(V.track.name,PEEK.length);
+  showPrint('جارٍ تجهيز ورقتين…');
   PEEK.forEach(side=>{
-    const img=w.document.createElement('img');
+    const img=d.createElement('img');
     img.src=location.origin+`/api/peek/${V.track.id}/${side}?v=${peekVer}`;
-    w.document.body.appendChild(img);
+    d.body.appendChild(img);
   });
-  setTimeout(()=>{w.document.querySelector('.s')?.remove();w.focus();w.print()},900);
+  setTimeout(()=>{
+    if(printAbort){ hidePrint(); toast('أُلغيت الطباعة'); return; }
+    d.querySelector('.s')?.remove(); hidePrint();
+    $('#printFrame').contentWindow.focus(); $('#printFrame').contentWindow.print();
+  },700);
 }
 const loadImg=src=>new Promise((ok,no)=>{const i=new Image();i.onload=()=>ok(i);i.onerror=no;i.src=src});
+/* الطباعة: صفحة تلو الأخرى بمقياس ١٫٣٥ ودفعات من ثلاث لترك الواجهة تستجيب. زمن خطي مع عدد الصفحات. */
 async function printRange(from,to){
+  if(!(settings.printAllowed||me?.isAdmin)){ toast('الطباعة مقفلة حاليًا'); return; }
   from=Math.max(1,from); to=Math.min(V.doc.numPages,to);
   if(to<from){ toast('النطاق غير صحيح'); return; }
-  const w=printWindow(V.track.name,to-from+1); if(!w) return;
-  const logo=me?.logo?await loadImg(logoUrl()):null;
+  printAbort=false;
+  const total=to-from+1;
+  const d=printDoc(V.track.name, total);
+  showPrint(`جارٍ التجهيز… 0 من ${total}`);
+  const logo=me?.logo?await loadImg(logoUrl()).catch(()=>null):null;
   const p=pos();
   for(let n=from;n<=to;n++){
-    const page=await V.doc.getPage(n), vp=page.getViewport({scale:2});
+    if(printAbort) break;
+    const page=await V.doc.getPage(n), vp=page.getViewport({scale:1.35});
     const c=document.createElement('canvas'); c.width=vp.width; c.height=vp.height;
-    const ctx=c.getContext('2d');
+    const ctx=c.getContext('2d',{alpha:false});
     await page.render({canvasContext:ctx,viewport:vp}).promise;
     if(logo && await isFront(V.doc,n,V.track.id)){
       const lw=vp.width*p.w, lh=lw*(logo.height/logo.width);
       ctx.drawImage(logo, vp.width-lw-vp.width*p.x, vp.height*p.y, lw, lh);
     }
-    const img=w.document.createElement('img');
-    img.src=c.toDataURL('image/jpeg',.92);
-    w.document.body.appendChild(img);
-    const s=w.document.querySelector('.s'); if(s) s.textContent=`جارٍ التجهيز… ${n-from+1} من ${to-from+1}`;
+    const img=d.createElement('img');
+    img.src=c.toDataURL('image/jpeg',.85);
+    d.body.appendChild(img);
+    c.width=c.height=0;
+    const i=n-from+1;
+    const s=d.querySelector('.s'); if(s) s.textContent=`جارٍ التجهيز… ${i} من ${total}`;
+    $('#printMsg').textContent=`جارٍ التجهيز… ${i} من ${total}`;
+    if(i%3===0) await new Promise(r=>setTimeout(r,0));
   }
-  w.document.querySelector('.s')?.remove();
-  setTimeout(()=>{w.focus();w.print()},700);
+  hidePrint();
+  if(printAbort){ toast('أُلغيت الطباعة'); return; }
+  d.querySelector('.s')?.remove();
+  setTimeout(()=>{ $('#printFrame').contentWindow.focus(); $('#printFrame').contentWindow.print(); },200);
 }
 
 /* ---------- دخول وتسجيل ---------- */
@@ -396,7 +504,7 @@ $('#logoPick').onclick=()=>$('#logoInput').click();
 $('#logoInput').onchange=async e=>{
   const f=e.target.files[0]; if(!f) return;
   if(f.size>900*1024){ toast('اختر صورة أقل من 900 كيلوبايت'); return; }
-  try{ await api.putLogo(f); me.logo='/api/my-logo'; logoVer++; paintLogo(); toast('حُفظ شعارك — يظهر على أوراق الوجه'); }
+  try{ await api.putLogo(f); me.logo='/api/my-logo'; logoVer++; paintLogo(); remountStamps(); toast('حُفظ شعارك — يظهر على أوراق الوجه'); }
   catch(err){ toast(err.message); }
 };
 $('#logoReset').onclick=async()=>{
@@ -553,7 +661,10 @@ async function paintAdmin(){
 
 let rt; window.addEventListener('resize',()=>{
   if(!V.doc||!$('#viewer').classList.contains('on')) return;
-  clearTimeout(rt); rt=setTimeout(async()=>{ await layout(); goTo(V.cur); },250);
+  clearTimeout(rt); rt=setTimeout(async()=>{
+    if(V.holders.length) await applyZoom(); else await layout();
+    goTo(V.cur);
+  },250);
 });
 
 boot();

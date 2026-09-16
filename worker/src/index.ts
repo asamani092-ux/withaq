@@ -221,7 +221,8 @@ export default {
       if (p === '/api/my-logo' && req.method === 'PUT') {
         const s = await readSession(req, env);
         if (!s) return err('يلزم تسجيل الدخول', 401);
-        const type = req.headers.get('content-type') || 'image/png';
+        const raw = (req.headers.get('content-type') || 'image/png').split(';')[0].trim().toLowerCase();
+        const type = raw === 'image/jpg' ? 'image/jpeg' : raw;
         if (!/^image\/(png|jpeg|svg\+xml)$/.test(type)) return err('صيغة غير مدعومة');
         const buf = await req.arrayBuffer();
         if (buf.byteLength > 900 * 1024) return err('حجم الشعار يتجاوز 900 كيلوبايت');
