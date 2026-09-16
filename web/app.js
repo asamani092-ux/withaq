@@ -410,8 +410,9 @@ function printDoc(title,count){
   const d=f.contentDocument;
   d.open();
   d.write(`<!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>${title}</title>
-    <style>@page{size:A4 portrait;margin:0}body{margin:0;font-family:sans-serif}
-    .s{padding:16px;color:#072c49;font-size:15px}img{display:block;width:100%;page-break-after:always}</style>
+    <style>@page{size:A4 portrait;margin:0}html,body{margin:0;height:100%;font-family:sans-serif}
+    .s{padding:16px;color:#072c49;font-size:15px}
+    img{display:block;width:100%;height:100vh;object-fit:contain}img+img{page-break-before:always}</style>
     </head><body><p class="s">جارٍ تجهيز ${count} صفحة…</p></body></html>`);
   d.close();
   return d;
