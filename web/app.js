@@ -2,6 +2,8 @@
    لا أسرار ولا أرقام مديرين هنا: الصلاحية تأتي من /api/me.
    الملف الكامل لا يُطلب إلا بجلسة مسجّلة (/api/file/:id)، والزائر يرى صور معاينة فقط. */
 
+import { STAMP_AR, stampDraw } from './stamp-draw.js';
+
 const PEEK = ['back','front']; // ورقة الظهر ثم الوجه
 
 /* ---------- طبقة الخادم ---------- */
@@ -332,7 +334,7 @@ function remountStamps(){
 }
 function place(el,box,p){
   const W=box.clientWidth,H=box.clientHeight,w=W*p.w;
-  el.style.width=w+'px'; el.style.height=(w*.55)+'px';
+  el.style.width=w+'px'; el.style.height=(w*STAMP_AR)+'px';
   el.style.right=(W*p.x)+'px'; el.style.top=(H*p.y)+'px';
 }
 let stampDrag=null, stampWinBound=false;
@@ -424,9 +426,10 @@ function printDoc(title,count){
   const d=f.contentDocument;
   d.open();
   d.write(`<!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>${title}</title>
-    <style>@page{size:A4 portrait;margin:0}html,body{margin:0;height:100%;font-family:sans-serif}
+    <style>@page{size:A4 portrait;margin:0}html,body{margin:0;padding:0;font-family:sans-serif}
     .s{padding:16px;color:#072c49;font-size:15px}
-    img{display:block;width:100%;height:100vh;object-fit:contain}img+img{page-break-before:always}</style>
+    img{display:block;width:210mm;height:297mm;object-fit:contain;object-position:top center;page-break-inside:avoid}
+    img+img{page-break-before:always}</style>
     </head><body><p class="s">جارٍ تجهيز ${count} صفحة…</p></body></html>`);
   d.close();
   return d;
@@ -472,8 +475,8 @@ async function printRange(from,to){
       g.addColorStop(0,`rgb(${COVER.c0})`); g.addColorStop(1,`rgb(${COVER.c1})`);
       ctx.fillStyle=g; ctx.fillRect(cx,cy,cw,ch);
       if(logo){
-        const lw=vp.width*p.w, lh=lw*(logo.height/logo.width);
-        ctx.drawImage(logo, vp.width-lw-vp.width*p.x, vp.height*p.y, lw, lh);
+        const r=stampDraw(vp.width,vp.height,p,logo.width,logo.height);
+        ctx.drawImage(logo, r.x, r.y, r.w, r.h);
       }
     }
     const img=d.createElement('img');
