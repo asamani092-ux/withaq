@@ -421,38 +421,38 @@ let printAbort=false;
 $('#printCancel').onclick=()=>{ printAbort=true; };
 function showPrint(m){ $('#printMsg').textContent=m; $('#printOverlay').classList.remove('hidden'); }
 function hidePrint(){ $('#printOverlay').classList.add('hidden'); }
-function printDoc(title,count){
-  const f=$('#printFrame');
-  const d=f.contentDocument;
-  d.open();
-  d.write(`<!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>${title}</title>
-    <style>@page{size:A4 portrait;margin:0}html,body{margin:0;padding:0;background:#fff}
-    .s{padding:16px;color:#072c49;font-size:15px;font-family:sans-serif}
-    img{display:block;width:100%;height:auto}img+img{page-break-before:always}</style>
-    </head><body><p class="s">جارٍ تجهيز ${count} صفحة…</p></body></html>`);
-  d.close();
-  return d;
-}
-function firePrint(d){
-  d.querySelector('.s')?.remove();
+function firePrint(srcs){
+  const host=$('#printHost');
+  host.innerHTML='';
+  srcs.forEach(src=>{
+    const img=document.createElement('img');
+    img.src=src;
+    host.appendChild(img);
+  });
   hidePrint();
-  const imgs=[...d.images];
+  const done=()=>{
+    document.body.classList.remove('printing');
+    window.removeEventListener('afterprint', done);
+  };
+  const go=()=>{
+    window.addEventListener('afterprint', done);
+    document.body.classList.add('printing');
+    window.print();
+  };
+  const imgs=[...host.images];
   const ready=imgs.length?Promise.all(imgs.map(img=>img.complete&&img.naturalWidth?1:new Promise(r=>{img.onload=()=>r();img.onerror=()=>r()}))):Promise.resolve();
-  return ready.then(()=>{ $('#printFrame').contentWindow.focus(); $('#printFrame').contentWindow.print(); });
+  return ready.then(go);
 }
 /* معاينة الزائر: طباعة الصفحة الظاهرة وحدها (وجه أو ظهر). زمن O(1). */
 function printPeekSingle(){
   printAbort=false;
   const side=PEEK[Math.max(0,Math.min(PEEK.length-1,V.cur-1))];
-  const d=printDoc(V.track.name,1);
   showPrint('جارٍ تجهيز الصفحة…');
-  const img=d.createElement('img');
-  img.src=location.origin+`/api/peek/${V.track.id}/${side}?v=${peekVer}`;
-  d.body.appendChild(img);
+  const src=location.origin+`/api/peek/${V.track.id}/${side}?v=${peekVer}`;
   setTimeout(()=>{
     if(printAbort){ hidePrint(); toast('أُلغيت الطباعة'); return; }
-    firePrint(d);
-  },600);
+    firePrint([src]);
+  },200);
 }
 const loadImg=src=>new Promise((ok,no)=>{const i=new Image();i.onload=()=>ok(i);i.onerror=no;i.src=src});
 /* صندوق الشعار كما هو ظاهر في العارض. زمن ثابت. */
@@ -470,9 +470,9 @@ async function printRange(from,to){
   if(to<from){ toast('النطاق غير صحيح'); return; }
   printAbort=false;
   const total=to-from+1;
-  const d=printDoc(V.track.name, total);
   showPrint(`جارٍ التجهيز… 0 من ${total}`);
   const logo=me?.logo?await loadImg(logoUrl()).catch(()=>null):null;
+  const srcs=[];
   for(let n=from;n<=to;n++){
     if(printAbort) break;
     const box=V.holders[n-1];
@@ -495,17 +495,14 @@ async function printRange(from,to){
         }
       }
     }catch(_){ }
-    const img=d.createElement('img');
-    img.src=c.toDataURL('image/jpeg',.85);
-    d.body.appendChild(img);
+    srcs.push(c.toDataURL('image/jpeg',.85));
     c.width=c.height=0;
     const i=n-from+1;
-    const s=d.querySelector('.s'); if(s) s.textContent=`جارٍ التجهيز… ${i} من ${total}`;
     $('#printMsg').textContent=`جارٍ التجهيز… ${i} من ${total}`;
     if(i%3===0) await new Promise(r=>setTimeout(r,0));
   }
   if(printAbort){ hidePrint(); toast('أُلغيت الطباعة'); return; }
-  await firePrint(d);
+  await firePrint(srcs);
 }
 
 /* ---------- دخول وتسجيل ---------- */

@@ -149,12 +149,15 @@ footer{text-align:center;color:var(--muted);font-size:13.5px;padding:24px 16px 3
 .track-admin .ta-top b{flex:1;min-width:120px}
 .track-admin .ta-id{font-size:12.5px;color:var(--muted)}
 .track-admin .ta-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
-.print-frame{position:fixed;left:-10000px;top:0;width:210mm;height:297mm;opacity:1;pointer-events:none;border:0;background:#fff}
+.print-host{display:none}
 .print-ov{position:fixed;inset:0;z-index:90;background:rgba(7,44,73,.55);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;color:#fff}
 .print-ov p{margin:0;font-size:17px;font-weight:700}
 @media print{
-  body>*:not(#printFrame){display:none!important}
-  #printFrame{position:static!important;left:auto!important;width:100%!important;height:auto!important;opacity:1!important}
+  body.printing>*:not(#printHost){display:none!important}
+  body.printing #printHost{display:block!important}
+  #printHost img{display:block;width:100%;height:auto}
+  #printHost img+img{page-break-before:always}
+  @page{size:A4 portrait;margin:0}
 }
 </style>
 </head>
@@ -326,8 +329,8 @@ footer{text-align:center;color:var(--muted);font-size:13.5px;padding:24px 16px 3
   <p id="printMsg">جارٍ التجهيز…</p>
   <button type="button" class="btn btn-1" id="printCancel">إلغاء</button>
 </div>
-<iframe id="printFrame" class="print-frame" title="طباعة"></iframe>
+<div id="printHost" class="print-host"></div>
 <div class="toast" id="toast"></div>
-<script type="module" src="app.js?v=print5"></script>
+<script type="module" src="app.js?v=print6"></script>
 </body>
 </html>
