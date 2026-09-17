@@ -304,7 +304,7 @@ const pos=()=>me?.pos||DEF;
 
 /* تغطية شعار الجمعية (تحفيظ بريدة) على أوراق الوجه فقط، ثم زرع شعار المستخدم فوقها.
    الإحداثيات واللون مقيسة من الصفحات الحقيقية (نسب من أبعاد الصفحة)؛ تدرّج أفقي مطابق لرأس الصفحة. */
-const COVER={ left:0.80, right:0.965, top:0.0, bottom:0.088, c0:'35,80,114', c1:'31,67,102' };
+const COVER={ left:0.825, right:0.962, top:0.0, bottom:0.085, c0:'35,80,114', c1:'31,67,102' };
 function mountCover(box){
   if(box.querySelector('.cover')) return;
   const el=document.createElement('div');
@@ -409,11 +409,11 @@ document.addEventListener('keydown',e=>{
 });
 $('#vStage').addEventListener('contextmenu',e=>e.preventDefault());
 
-/* ---------- الطباعة (فردية تلقائيًا: الصفحة الظاهرة فقط، صفحة في كل أمر) ---------- */
+/* ---------- الطباعة: الملف كامل عبر الإطار المخفي (بلا صفحات فارغة) ---------- */
 $('#vPrint').onclick=async()=>{
   if($('#vPrint').disabled) return;
-  if(V.mode==='peek'){ printPeekSingle(); return; }
-  await printRange(V.cur, V.cur);
+  if(V.mode==='peek'){ printPeek(); return; }
+  await printRange(1, V.doc.numPages);
 };
 let printAbort=false;
 $('#printCancel').onclick=()=>{ printAbort=true; };
@@ -431,20 +431,21 @@ function printDoc(title,count){
   d.close();
   return d;
 }
-/* معاينة الزائر: طباعة الصفحة الظاهرة وحدها (وجه أو ظهر). زمن O(1). */
-function printPeekSingle(){
+/* معاينة الزائر: طباعة الورقتين (ظهر + وجه). زمن O(1). */
+function printPeek(){
   printAbort=false;
-  const side=PEEK[Math.max(0,Math.min(PEEK.length-1,V.cur-1))];
-  const d=printDoc(V.track.name,1);
-  showPrint('جارٍ تجهيز الصفحة…');
-  const img=d.createElement('img');
-  img.src=location.origin+`/api/peek/${V.track.id}/${side}?v=${peekVer}`;
-  d.body.appendChild(img);
+  const d=printDoc(V.track.name,PEEK.length);
+  showPrint('جارٍ تجهيز المعاينة…');
+  PEEK.forEach(side=>{
+    const img=d.createElement('img');
+    img.src=location.origin+`/api/peek/${V.track.id}/${side}?v=${peekVer}`;
+    d.body.appendChild(img);
+  });
   setTimeout(()=>{
     if(printAbort){ hidePrint(); toast('أُلغيت الطباعة'); return; }
     d.querySelector('.s')?.remove(); hidePrint();
     $('#printFrame').contentWindow.focus(); $('#printFrame').contentWindow.print();
-  },600);
+  },700);
 }
 const loadImg=src=>new Promise((ok,no)=>{const i=new Image();i.onload=()=>ok(i);i.onerror=no;i.src=src});
 /* الطباعة: صفحة تلو الأخرى بمقياس ١٫٣٥ ودفعات من ثلاث لترك الواجهة تستجيب. زمن خطي مع عدد الصفحات. */
@@ -730,17 +731,41 @@ async function paintAdmin(){
   }catch(e){ toast(e.message); }
 }
 
-/* عرض المقترحات في لوحة المدير. زمن O(عدد المقترحات) للرسم. */
+/* عرض المقترحات جدولاً في لوحة المدير. زمن O(عدد المقترحات) للرسم. */
+let lastSuggestions=[];
 function paintSuggestions(list){
-  const host=$('#suggList'); if(!host) return;
-  $('#suggCount').textContent=`(${list.length})`;
-  if(!list.length){ host.innerHTML='<p style="color:var(--muted);margin:0">لا مقترحات بعد</p>'; return; }
-  host.innerHTML=list.map(s=>`
-    <div style="border-bottom:1px solid var(--line);padding:9px 0">
-      <div style="font-size:13px;color:var(--muted)">${attr(s.name||'—')} · ${s.phone} · ${new Date(s.created_at).toLocaleDateString('ar-SA')}</div>
-      <div style="white-space:pre-wrap">${attr(s.body)}</div>
-    </div>`).join('');
+  lastSuggestions=list||[];
+  const host=$('#suggTable'); if(!host) return;
+  $('#suggCount').textContent=`(${lastSuggestions.length})`;
+  const head='<tr><th>#</th><th>الاسم</th><th>الجهة</th><th>الجوال</th><th>المقترح</th><th>التاريخ</th></tr>';
+  if(!lastSuggestions.length){ host.innerHTML=head+'<tr><td colspan="6" style="color:var(--muted)">لا مقترحات بعد</td></tr>'; return; }
+  host.innerHTML=head+lastSuggestions.map((s,i)=>`<tr>
+      <td>${i+1}</td>
+      <td>${attr(s.name||'—')}</td>
+      <td>${attr(s.org||'—')}</td>
+      <td>${attr(s.phone)}</td>
+      <td style="white-space:pre-wrap">${attr(s.body)}</td>
+      <td>${new Date(s.created_at).toLocaleDateString('ar-SA')}</td>
+    </tr>`).join('');
 }
+/* طباعة المقترحات جدولاً عبر الإطار المخفي (لا نافذة متصفح جديدة). */
+$('#printSugg').onclick=()=>{
+  if(!lastSuggestions.length){ toast('لا مقترحات للطباعة'); return; }
+  const rows=lastSuggestions.map((s,i)=>`<tr><td>${i+1}</td><td>${attr(s.name||'—')}</td><td>${attr(s.org||'—')}</td><td>${attr(s.phone)}</td><td>${attr(s.body)}</td><td>${new Date(s.created_at).toLocaleDateString('ar-SA')}</td></tr>`).join('');
+  const f=$('#printFrame'); const d=f.contentDocument; d.open();
+  d.write(`<!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>مقترحات وثاق</title>
+    <style>@page{size:A4 portrait;margin:14mm}body{font-family:"Tajawal",sans-serif;color:#0f2233}
+    h2{color:#072c49;margin:0 0 12px;font-size:20px}
+    table{width:100%;border-collapse:collapse;font-size:13px}
+    th,td{border:1px solid #cbd5e1;padding:6px 8px;text-align:right;vertical-align:top}
+    th{background:#eef2f4;color:#072c49}
+    tr{break-inside:avoid}</style></head>
+    <body><h2>مقترحات المستخدمين (${lastSuggestions.length})</h2>
+    <table><thead><tr><th>#</th><th>الاسم</th><th>الجهة</th><th>الجوال</th><th>المقترح</th><th>التاريخ</th></tr></thead>
+    <tbody>${rows}</tbody></table></body></html>`);
+  d.close();
+  setTimeout(()=>{ f.contentWindow.focus(); f.contentWindow.print(); },300);
+};
 
 let rt; window.addEventListener('resize',()=>{
   if(!V.doc||!$('#viewer').classList.contains('on')) return;

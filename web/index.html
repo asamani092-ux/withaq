@@ -161,7 +161,7 @@ footer{text-align:center;color:var(--muted);font-size:13.5px;padding:24px 16px 3
     <div class="brand"><img src="assets/withaq-logo.png" alt="وثاق"></div>
     <span class="who hidden" id="who"><span class="av" id="whoAv"></span><span id="whoName"></span></span>
     <button class="icon-btn hidden" id="btnAdmin" title="لوحة المدير"><svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg></button>
-    <button class="icon-btn hidden" id="btnSettings" title="شعارك"><svg viewBox="0 0 24 24"><path d="M21 15V6a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9"/><path d="m3 15 5-4 4 3 4-5 5 6"/></svg></button>
+    <button class="btn btn-line hidden" id="btnSettings" style="padding:9px 16px;gap:7px"><svg viewBox="0 0 24 24" style="width:16px;height:16px"><path d="M21 15V6a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9"/><path d="m3 15 5-4 4 3 4-5 5 6"/></svg>شعاري</button>
     <button class="icon-btn hidden" id="btnLogout" title="خروج"><svg viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5"/><path d="M21 12H9"/></svg></button>
     <button class="btn btn-a hidden" id="btnLogin" style="padding:9px 18px">دخول</button>
   </div>
@@ -301,7 +301,8 @@ footer{text-align:center;color:var(--muted);font-size:13.5px;padding:24px 16px 3
       <div class="block">
         <h4>المقترحات <span id="suggCount" style="color:var(--muted);font-weight:400"></span></h4>
         <p>مقترحات المستخدمين — الأحدث أولًا.</p>
-        <div id="suggList" style="max-height:260px;overflow:auto"></div>
+        <div style="max-height:300px;overflow:auto"><table id="suggTable"></table></div>
+        <div class="rowx" style="margin-top:10px"><button class="btn btn-line" id="printSugg">طباعة المقترحات</button></div>
       </div>
     </div>
   </div>
