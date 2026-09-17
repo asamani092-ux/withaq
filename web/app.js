@@ -260,7 +260,7 @@ async function renderPage(n){
   box.prepend(c);
   const front=await isFront(V.doc,n,V.track.id);
   box.insertAdjacentHTML('beforeend',`<span class="side">${front?'وجه':'ظهر'}</span>`);
-  if(front&&me?.logo) mountStamp(box);
+  if(front){ mountCover(box); if(me?.logo) mountStamp(box); }
 }
 
 /* تصغير بلا إفراغ: تحديث المقاس ثم إعادة رسم الصفحات الظاهرة فقط. زمن خطي مع الصفحات الظاهرة. */
@@ -301,6 +301,20 @@ async function sharpenPage(n){
 /* ---------- الشعار ---------- */
 const DEF={x:.06,y:.02,w:.16};
 const pos=()=>me?.pos||DEF;
+
+/* تغطية شعار الجمعية (تحفيظ بريدة) على أوراق الوجه فقط، ثم زرع شعار المستخدم فوقها.
+   الإحداثيات واللون مقيسة من الصفحات الحقيقية (نسب من أبعاد الصفحة)؛ تدرّج أفقي مطابق لرأس الصفحة. */
+const COVER={ left:0.80, right:0.965, top:0.0, bottom:0.088, c0:'35,80,114', c1:'31,67,102' };
+function mountCover(box){
+  if(box.querySelector('.cover')) return;
+  const el=document.createElement('div');
+  el.className='cover';
+  el.style.cssText='position:absolute;pointer-events:none;'
+    +`left:${COVER.left*100}%;top:${COVER.top*100}%;`
+    +`width:${(COVER.right-COVER.left)*100}%;height:${(COVER.bottom-COVER.top)*100}%;`
+    +`background:linear-gradient(90deg,rgb(${COVER.c0}) 0%,rgb(${COVER.c1}) 100%)`;
+  box.appendChild(el);
+}
 function mountStamp(box){
   if(box.querySelector('.stamp')) return;
   const el=document.createElement('div');
@@ -450,9 +464,17 @@ async function printRange(from,to){
     const c=document.createElement('canvas'); c.width=vp.width; c.height=vp.height;
     const ctx=c.getContext('2d',{alpha:false});
     await page.render({canvasContext:ctx,viewport:vp}).promise;
-    if(logo && await isFront(V.doc,n,V.track.id)){
-      const lw=vp.width*p.w, lh=lw*(logo.height/logo.width);
-      ctx.drawImage(logo, vp.width-lw-vp.width*p.x, vp.height*p.y, lw, lh);
+    if(await isFront(V.doc,n,V.track.id)){
+      /* تغطية شعار الجمعية بتدرّج رأس الصفحة، ثم شعار المستخدم فوقها إن وُجد */
+      const cx=vp.width*COVER.left, cy=vp.height*COVER.top,
+            cw=vp.width*(COVER.right-COVER.left), ch=vp.height*(COVER.bottom-COVER.top);
+      const g=ctx.createLinearGradient(cx,0,cx+cw,0);
+      g.addColorStop(0,`rgb(${COVER.c0})`); g.addColorStop(1,`rgb(${COVER.c1})`);
+      ctx.fillStyle=g; ctx.fillRect(cx,cy,cw,ch);
+      if(logo){
+        const lw=vp.width*p.w, lh=lw*(logo.height/logo.width);
+        ctx.drawImage(logo, vp.width-lw-vp.width*p.x, vp.height*p.y, lw, lh);
+      }
     }
     const img=d.createElement('img');
     img.src=c.toDataURL('image/jpeg',.85);
