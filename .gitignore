@@ -1,0 +1,4 @@
+.wrangler/
+seed/
+*.pdf
+node_modules/

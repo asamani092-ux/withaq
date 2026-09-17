@@ -23,6 +23,24 @@ const normPhone = (v: unknown) => String(v ?? '').replace(/\D/g, '').replace(/^9
 const validPhone = (p: string) => /^05\d{8}$/.test(p);
 const now = () => Date.now();
 
+const clientIp = (req: Request) =>
+  (req.headers.get('cf-connecting-ip') || req.headers.get('x-forwarded-for') || '')
+    .split(',')[0].trim() || 'unknown';
+
+/* أحداث تُضاف ولا تُستبدل. زمن العد: لوغاريتمي+خطي مع أحداث النافذة. */
+async function allowRate(env: Env, bucket: string, limit: number, windowMs: number): Promise<boolean> {
+  const t = now();
+  await env.DB.prepare('DELETE FROM rate_events WHERE created_at < ?').bind(t - windowMs * 2).run();
+  const row = await env.DB.prepare(
+    'SELECT COUNT(*) AS c FROM rate_events WHERE bucket = ? AND created_at >= ?'
+  ).bind(bucket, t - windowMs).first<{ c: number }>();
+  if ((row?.c ?? 0) >= limit) return false;
+  await env.DB.prepare('INSERT INTO rate_events (bucket, created_at) VALUES (?, ?)').bind(bucket, t).run();
+  return true;
+}
+const tooMany = (message = 'تجاوزت حد المحاولات، انتظر قليلًا') =>
+  json({ error: message }, 429, { 'retry-after': '60' });
+
 /* ---------- الجلسة ---------- */
 type Session = { phone: string; name: string; org: string; isAdmin: boolean };
 
@@ -71,6 +89,9 @@ export default {
         const phone = normPhone(b.phone);
         const name = String(b.name ?? '').trim();
         const org = String(b.org ?? '').trim();
+        const ip = clientIp(req);
+        if (!(await allowRate(env, `reg-ip:${ip}`, 10, 15 * 60 * 1000))) return tooMany();
+        if (!(await allowRate(env, `reg:${ip}:${phone}`, 5, 15 * 60 * 1000))) return tooMany();
         if (!validPhone(phone)) return err('رقم غير صحيح — يبدأ بـ 05 ويتكون من 10 أرقام');
         if (name.length < 3) return err('اكتب اسمك كاملًا');
         if (org.length < 2) return err('اكتب اسم الجهة');
@@ -91,6 +112,9 @@ export default {
       if (p === '/api/login' && req.method === 'POST') {
         const b = await req.json<any>();
         const phone = normPhone(b.phone);
+        const ip = clientIp(req);
+        if (!(await allowRate(env, `login-ip:${ip}`, 20, 15 * 60 * 1000))) return tooMany();
+        if (!(await allowRate(env, `login:${ip}:${phone}`, 8, 15 * 60 * 1000))) return tooMany();
         if (!validPhone(phone)) return err('رقم غير صحيح');
         const u = await env.DB.prepare('SELECT phone,name,org,logo_key,logo_pos FROM users WHERE phone=?')
           .bind(phone).first<any>();
@@ -138,8 +162,12 @@ export default {
       /* المسارات */
       if (p === '/api/tracks' && req.method === 'GET') {
         const s = await readSession(req, env);
+        const all = url.searchParams.get('all') === '1';
+        if (all && !s?.isAdmin) return err('صلاحية مدير مطلوبة', 403);
         const rows = await env.DB.prepare(
-          'SELECT id,name,daily,pages,hidden FROM tracks WHERE hidden=0 ORDER BY sort'
+          all
+            ? 'SELECT id,name,daily,pages,hidden,sort FROM tracks ORDER BY sort'
+            : 'SELECT id,name,daily,pages,hidden FROM tracks WHERE hidden=0 ORDER BY sort'
         ).all<any>();
         return json({ tracks: rows.results, signedIn: !!s });
       }
@@ -149,6 +177,8 @@ export default {
       if (fileMatch && req.method === 'GET') {
         const s = await readSession(req, env);
         if (!s) return err('يلزم تسجيل الدخول', 401);
+        if (!(await allowRate(env, `file:${clientIp(req)}:${s.phone}`, 40, 5 * 60 * 1000)))
+          return tooMany('تجاوزت حد التحميل، انتظر قليلًا');
         const t = await env.DB.prepare('SELECT r2_key FROM tracks WHERE id=? AND hidden=0').bind(fileMatch[1]).first<any>();
         if (!t) return err('المسار غير موجود', 404);
         const obj = await env.BUCKET.get(t.r2_key);
@@ -167,7 +197,13 @@ export default {
       if (peekMatch && req.method === 'GET') {
         const obj = await env.BUCKET.get(`preview/${peekMatch[1]}-${peekMatch[2]}.jpg`);
         if (!obj) return err('لا توجد معاينة', 404);
-        return new Response(obj.body, { headers: { 'content-type': 'image/jpeg', 'cache-control': 'public, max-age=86400' } });
+        return new Response(obj.body, {
+          headers: {
+            'content-type': 'image/jpeg',
+            'cache-control': 'public, max-age=120',
+            ...(obj.httpEtag ? { etag: obj.httpEtag } : {})
+          }
+        });
       }
 
       /* شعار المستخدم — نسخته وحده */
@@ -185,7 +221,8 @@ export default {
       if (p === '/api/my-logo' && req.method === 'PUT') {
         const s = await readSession(req, env);
         if (!s) return err('يلزم تسجيل الدخول', 401);
-        const type = req.headers.get('content-type') || 'image/png';
+        const raw = (req.headers.get('content-type') || 'image/png').split(';')[0].trim().toLowerCase();
+        const type = raw === 'image/jpg' ? 'image/jpeg' : raw;
         if (!/^image\/(png|jpeg|svg\+xml)$/.test(type)) return err('صيغة غير مدعومة');
         const buf = await req.arrayBuffer();
         if (buf.byteLength > 900 * 1024) return err('حجم الشعار يتجاوز 900 كيلوبايت');
@@ -210,6 +247,32 @@ export default {
         if (![pos.x, pos.y, pos.w].every(n => Number.isFinite(n) && n >= 0 && n <= 1)) return err('قيم غير صحيحة');
         await env.DB.prepare('UPDATE users SET logo_pos=? WHERE phone=?').bind(JSON.stringify(pos), s.phone).run();
         return json({ ok: true });
+      }
+
+      /* ---------- المقترحات ---------- */
+      /* إرسال مقترح: جلسة مسجّلة، حد معدّل، إضافة تراكمية. */
+      if (p === '/api/suggestions' && req.method === 'POST') {
+        const s = await readSession(req, env);
+        if (!s) return err('يلزم تسجيل الدخول', 401);
+        if (!(await allowRate(env, `sugg:${clientIp(req)}:${s.phone}`, 5, 10 * 60 * 1000)))
+          return tooMany('تجاوزت حد إرسال المقترحات، انتظر قليلًا');
+        const body = String((await req.json<any>()).text ?? '').trim();
+        if (body.length < 3) return err('اكتب مقترحك (٣ أحرف على الأقل)');
+        if (body.length > 2000) return err('المقترح طويل — الحد ٢٠٠٠ حرف');
+        await env.DB.prepare('INSERT INTO suggestions (phone, body, created_at) VALUES (?,?,?)')
+          .bind(s.phone, body, now()).run();
+        return json({ ok: true });
+      }
+      /* قراءة المقترحات: مدير فقط. الاسم/الجهة بربط users، أعمدة مطلوبة فقط. */
+      if (p === '/api/suggestions' && req.method === 'GET') {
+        const s = await readSession(req, env);
+        if (!s?.isAdmin) return err('صلاحية مدير مطلوبة', 403);
+        const r = await env.DB.prepare(
+          `SELECT g.id, g.phone, g.body, g.created_at, u.name, u.org
+             FROM suggestions g LEFT JOIN users u ON u.phone = g.phone
+            ORDER BY g.created_at DESC LIMIT 5000`
+        ).all<any>();
+        return json({ suggestions: r.results });
       }
 
       /* ---------- لوحة المدير ---------- */
@@ -262,13 +325,33 @@ export default {
         ).bind(id, id, '—', key, now()).run();
         return json({ ok: true });
       }
+
+      /* معاينة الوجه/الظهر — يولّدها المتصفح بعد الرفع؛ العامل يخزّن فقط */
+      const prevMatch = p.match(/^\/api\/tracks\/([a-z0-9-]+)\/preview\/(front|back)$/i);
+      if (prevMatch && req.method === 'PUT') {
+        if (!(await admin())) return err('صلاحية مدير مطلوبة', 403);
+        const type = (req.headers.get('content-type') || '').split(';')[0].trim();
+        if (type !== 'image/jpeg' && type !== 'image/jpg') return err('يجب أن تكون الصورة JPEG');
+        const id = prevMatch[1];
+        const side = prevMatch[2].toLowerCase();
+        const t = await env.DB.prepare('SELECT id FROM tracks WHERE id=?').bind(id).first();
+        if (!t) return err('المسار غير موجود', 404);
+        const buf = await req.arrayBuffer();
+        if (buf.byteLength < 32) return err('الصورة فارغة');
+        if (buf.byteLength > 1_500_000) return err('حجم صورة المعاينة يتجاوز الحد');
+        await env.BUCKET.put(`preview/${id}-${side}.jpg`, buf, { httpMetadata: { contentType: 'image/jpeg' } });
+        return json({ ok: true });
+      }
+
       if (p.match(/^\/api\/tracks\/[a-z0-9-]+$/i) && req.method === 'PATCH') {
         if (!(await admin())) return err('صلاحية مدير مطلوبة', 403);
         const id = p.split('/').pop()!;
         const b = await req.json<any>();
+        const pages = b.pages === undefined || b.pages === null ? null : Number(b.pages);
+        if (pages !== null && (!Number.isInteger(pages) || pages < 1 || pages > 5000)) return err('عدد الصفحات غير صحيح');
         await env.DB.prepare(
-          'UPDATE tracks SET name=COALESCE(?,name), daily=COALESCE(?,daily), hidden=COALESCE(?,hidden), sort=COALESCE(?,sort), updated_at=? WHERE id=?'
-        ).bind(b.name ?? null, b.daily ?? null, b.hidden === undefined ? null : (b.hidden ? 1 : 0), b.sort ?? null, now(), id).run();
+          'UPDATE tracks SET name=COALESCE(?,name), daily=COALESCE(?,daily), hidden=COALESCE(?,hidden), sort=COALESCE(?,sort), pages=COALESCE(?,pages), updated_at=? WHERE id=?'
+        ).bind(b.name ?? null, b.daily ?? null, b.hidden === undefined ? null : (b.hidden ? 1 : 0), b.sort ?? null, pages, now(), id).run();
         return json({ ok: true });
       }
 

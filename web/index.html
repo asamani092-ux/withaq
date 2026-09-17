@@ -70,7 +70,7 @@ svg{fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-l
 .track{background:var(--card);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--sh);overflow:hidden;text-align:start;display:flex;flex-direction:column;transition:.18s}
 .track:hover{transform:translateY(-4px);border-color:var(--accent)}
 .track .thumb{aspect-ratio:1/1.414;background:#eef2f4;position:relative;display:grid;place-items:center;padding:6px}
-.track .thumb canvas{max-width:100%;max-height:100%;display:block}
+.track .thumb canvas,.track .thumb img{max-width:100%;max-height:100%;width:100%;height:100%;object-fit:contain;display:block}
 .track .thumb .badge{position:absolute;top:9px;inset-inline-start:9px;background:rgba(255,255,255,.95);color:var(--navy);border-radius:var(--r-pill);padding:3px 11px;font-size:12.5px;font-weight:700}
 .track .body{padding:13px 15px 15px;display:flex;flex-direction:column;gap:9px}
 .track .body h3{margin:0;font-size:17.5px;font-weight:700}
@@ -143,6 +143,14 @@ th,td{text-align:right;padding:9px 6px;border-bottom:1px solid var(--line)}
 th{color:var(--muted);font-weight:600;font-size:13.5px}
 .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--navy);color:#fff;padding:11px 22px;border-radius:var(--r-pill);z-index:95;display:none;font-size:15px;box-shadow:0 12px 30px rgba(7,44,73,.32)}
 footer{text-align:center;color:var(--muted);font-size:13.5px;padding:24px 16px 38px}
+.track-admin{border:1px solid var(--line);border-radius:14px;padding:12px;margin-bottom:10px;background:#faf8f5}
+.track-admin .ta-top{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px}
+.track-admin .ta-top b{flex:1;min-width:120px}
+.track-admin .ta-id{font-size:12.5px;color:var(--muted)}
+.track-admin .ta-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+.print-frame{position:fixed;left:0;top:0;width:1px;height:1px;opacity:0;pointer-events:none;border:0}
+.print-ov{position:fixed;inset:0;z-index:90;background:rgba(7,44,73,.55);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;color:#fff}
+.print-ov p{margin:0;font-size:17px;font-weight:700}
 @media print{body>*{display:none!important}}
 </style>
 </head>
@@ -150,7 +158,7 @@ footer{text-align:center;color:var(--muted);font-size:13.5px;padding:24px 16px 3
 
 <div class="topbar">
   <div class="in">
-    <div class="brand"><img src="assets/withaq-logo.png" alt="وثاق"><span><b>وثاق</b><small>برنامج وثاق</small></span></div>
+    <div class="brand"><img src="assets/withaq-logo.png" alt="وثاق"></div>
     <span class="who hidden" id="who"><span class="av" id="whoAv"></span><span id="whoName"></span></span>
     <button class="icon-btn hidden" id="btnAdmin" title="لوحة المدير"><svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg></button>
     <button class="icon-btn hidden" id="btnSettings" title="شعارك"><svg viewBox="0 0 24 24"><path d="M21 15V6a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9"/><path d="m3 15 5-4 4 3 4-5 5 6"/></svg></button>
@@ -188,6 +196,19 @@ footer{text-align:center;color:var(--muted);font-size:13.5px;padding:24px 16px 3
   <section class="screen" id="scUser">
     <div class="sec-head"><h2 id="hello"></h2><span id="userNote"></span></div>
     <div class="tracks" id="userTracks"></div>
+
+    <div class="sec-head"><h2>مقترحاتك</h2><span>رأيك يطوّر البرنامج — يصل إلى المدير مباشرة</span></div>
+    <div class="block">
+      <div class="field">
+        <label for="suggInput">اكتب مقترحك</label>
+        <div class="ctrl" style="align-items:flex-start">
+          <svg viewBox="0 0 24 24" style="margin-top:4px"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+          <textarea id="suggInput" rows="3" placeholder="مقترحك أو ملاحظتك…" maxlength="2000" style="border:none;background:none;outline:none;width:100%;color:var(--ink);resize:vertical;font-family:inherit;font-size:inherit"></textarea>
+        </div>
+        <span class="hint">لا تُرسل بيانات حسّاسة — يُحفظ الاسم والجوال المسجَّلان فقط.</span>
+      </div>
+      <div class="rowx"><button class="btn btn-a" id="suggSend">إرسال المقترح</button></div>
+    </div>
   </section>
 </main>
 
@@ -204,14 +225,7 @@ footer{text-align:center;color:var(--muted);font-size:13.5px;padding:24px 16px 3
     <button id="vZoomOut">−</button>
     <button id="vZoomIn">+</button>
     <button id="vLogo" class="hidden">ضبط الشعار</button>
-    <span class="menu" id="vPrintMenu">
-      <button id="vPrint">طباعة</button>
-      <span class="list">
-        <button data-scope="page">الصفحة الحالية</button>
-        <button data-scope="range">نطاق صفحات…</button>
-        <button data-scope="all" id="printAll">الملف كاملًا</button>
-      </span>
-    </span>
+    <button id="vPrint">طباعة</button>
   </div>
   <div class="vstage" id="vStage"></div>
 </div>
@@ -256,7 +270,7 @@ footer{text-align:center;color:var(--muted);font-size:13.5px;padding:24px 16px 3
 <!-- لوحة المدير -->
 <div class="sheet" id="adminSheet">
   <div class="panel">
-    <div class="head"><div><h3>لوحة المدير</h3><p>التحكم في الطباعة والمديرين وسجل المسجَّلين.</p></div>
+    <div class="head"><div><h3>لوحة المدير</h3><p>التحكم في المسارات والطباعة والمديرين وسجل المسجَّلين.</p></div>
       <button class="icon-btn" data-close-admin><svg viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button></div>
     <div class="body">
       <div class="block">
@@ -264,6 +278,11 @@ footer{text-align:center;color:var(--muted);font-size:13.5px;padding:24px 16px 3
         <p id="printState">—</p>
         <div class="rowx"><span class="flag off" id="printFlag"><b></b><span>مقفلة</span></span>
           <button class="btn btn-a" id="printToggle">تبديل الحالة</button></div>
+      </div>
+      <div class="block">
+        <h4>المسارات</h4>
+        <p>استبدال الملف يظهر للجميع فورًا. شعار كل مستخدم يبقى على نسخته ولا يُكتب داخل الملف.</p>
+        <div id="tracksAdmin"></div>
       </div>
       <div class="block">
         <h4>المديرون</h4>
@@ -279,10 +298,31 @@ footer{text-align:center;color:var(--muted);font-size:13.5px;padding:24px 16px 3
         <div style="max-height:230px;overflow:auto"><table id="usersTable"></table></div>
         <div class="rowx" style="margin-top:10px"><button class="btn btn-line" id="exportUsers">تصدير CSV</button></div>
       </div>
+      <div class="block">
+        <h4>المقترحات <span id="suggCount" style="color:var(--muted);font-weight:400"></span></h4>
+        <p>مقترحات المستخدمين — الأحدث أولًا.</p>
+        <div id="suggList" style="max-height:260px;overflow:auto"></div>
+      </div>
     </div>
   </div>
 </div>
 
+<!-- نافذة نظام عامة: تنبيه/تأكيد بنفس تصميم الألواح -->
+<div class="sheet" id="dlgSheet">
+  <div class="panel" style="width:min(460px,100%)">
+    <div class="head"><div><h3 id="dlgTitle"></h3><p id="dlgSub" class="hidden"></p></div></div>
+    <div class="body">
+      <p id="dlgBody" style="margin:0;color:var(--ink);font-size:15px;line-height:1.75"></p>
+      <div class="rowx" id="dlgActions" style="justify-content:flex-end;margin-top:4px"></div>
+    </div>
+  </div>
+</div>
+
+<div class="print-ov hidden" id="printOverlay">
+  <p id="printMsg">جارٍ التجهيز…</p>
+  <button type="button" class="btn btn-1" id="printCancel">إلغاء</button>
+</div>
+<iframe id="printFrame" class="print-frame" title="طباعة"></iframe>
 <div class="toast" id="toast"></div>
 <script type="module" src="app.js"></script>
 </body>

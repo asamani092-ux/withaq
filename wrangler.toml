@@ -9,7 +9,7 @@ binding = "ASSETS"
 [[d1_databases]]
 binding = "DB"
 database_name = "withaq"
-database_id = "ضع-معرّف-قاعدتك-هنا"   # wrangler d1 create withaq
+database_id = "a4343eb4-c259-485b-bd4b-19a7a24d6de2"   # wrangler d1 create withaq
 
 [[r2_buckets]]
 binding = "BUCKET"
@@ -19,6 +19,6 @@ bucket_name = "withaq-files"            # wrangler r2 bucket create withaq-files
 SESSION_DAYS = "30"
 
 # النطاق:
-# [[routes]]
-# pattern = "withaq.sam-dev.win"
-# custom_domain = true
+[[routes]]
+pattern = "withaq.sam-dev.win"
+custom_domain = true
