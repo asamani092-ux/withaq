@@ -311,7 +311,7 @@ function mountCover(box){
   if(box.querySelector('.cover')) return;
   const el=document.createElement('div');
   el.className='cover';
-  el.style.cssText='position:absolute;pointer-events:none;'
+  el.style.cssText='position:absolute;pointer-events:none;z-index:1;'
     +`left:${COVER.left*100}%;top:${COVER.top*100}%;`
     +`width:${(COVER.right-COVER.left)*100}%;height:${(COVER.bottom-COVER.top)*100}%;`
     +`background:linear-gradient(90deg,rgb(${COVER.c0}) 0%,rgb(${COVER.c1}) 100%)`;
@@ -433,6 +433,19 @@ function printDoc(title,count){
   d.close();
   return d;
 }
+/* طباعة إطار الصفحة: بعد اكتمال الصور. زمن خطي مع عدد الصور، مكان ثابت. */
+function firePrint(d){
+  const imgs=[...d.images];
+  const ready=imgs.length?Promise.all(imgs.map(img=>img.complete&&img.naturalWidth?1:new Promise(r=>{img.onload=()=>r();img.onerror=()=>r()}))):Promise.resolve();
+  return ready.then(()=>{
+    if(printAbort){ hidePrint(); toast('أُلغيت الطباعة'); return; }
+    d.querySelector('.s')?.remove();
+    hidePrint();
+    const w=$('#printFrame').contentWindow;
+    w.focus();
+    w.print();
+  });
+}
 /* معاينة الزائر: طباعة الصفحة الظاهرة وحدها (وجه أو ظهر). زمن O(1). */
 function printPeekSingle(){
   printAbort=false;
@@ -442,11 +455,7 @@ function printPeekSingle(){
   const img=d.createElement('img');
   img.src=location.origin+`/api/peek/${V.track.id}/${side}?v=${peekVer}`;
   d.body.appendChild(img);
-  setTimeout(()=>{
-    if(printAbort){ hidePrint(); toast('أُلغيت الطباعة'); return; }
-    d.querySelector('.s')?.remove(); hidePrint();
-    $('#printFrame').contentWindow.focus(); $('#printFrame').contentWindow.print();
-  },600);
+  firePrint(d);
 }
 const loadImg=src=>new Promise((ok,no)=>{const i=new Image();i.onload=()=>ok(i);i.onerror=no;i.src=src});
 /* صندوق الشعار كما هو ظاهر في العارض. زمن ثابت. */
@@ -475,18 +484,20 @@ async function printRange(from,to){
     const c=document.createElement('canvas'); c.width=vp.width; c.height=vp.height;
     const ctx=c.getContext('2d',{alpha:false});
     await page.render({canvasContext:ctx,viewport:vp}).promise;
-    if(await isFront(V.doc,n,V.track.id)){
-      /* تغطية شعار الجمعية بتدرّج رأس الصفحة، ثم شعار المستخدم فوقها إن وُجد */
-      const cx=vp.width*COVER.left, cy=vp.height*COVER.top,
-            cw=vp.width*(COVER.right-COVER.left), ch=vp.height*(COVER.bottom-COVER.top);
-      const g=ctx.createLinearGradient(cx,0,cx+cw,0);
-      g.addColorStop(0,`rgb(${COVER.c0})`); g.addColorStop(1,`rgb(${COVER.c1})`);
-      ctx.fillStyle=g; ctx.fillRect(cx,cy,cw,ch);
-      if(logo){
-        const r=stampDraw(vp.width,vp.height,stampPosFromBox(box),logo.width,logo.height);
-        ctx.drawImage(logo, r.x, r.y, r.w, r.h);
+    try{
+      if(await isFront(V.doc,n,V.track.id)){
+        /* تغطية شعار الجمعية بتدرّج رأس الصفحة، ثم شعار المستخدم فوقها إن وُجد */
+        const cx=vp.width*COVER.left, cy=vp.height*COVER.top,
+              cw=vp.width*(COVER.right-COVER.left), ch=vp.height*(COVER.bottom-COVER.top);
+        const g=ctx.createLinearGradient(cx,0,cx+cw,0);
+        g.addColorStop(0,`rgb(${COVER.c0})`); g.addColorStop(1,`rgb(${COVER.c1})`);
+        ctx.fillStyle=g; ctx.fillRect(cx,cy,cw,ch);
+        if(logo){
+          const r=stampDraw(vp.width,vp.height,stampPosFromBox(box),logo.width,logo.height);
+          ctx.drawImage(logo, r.x, r.y, r.w, r.h);
+        }
       }
-    }
+    }catch(_){ }
     const img=d.createElement('img');
     img.src=c.toDataURL('image/jpeg',.85);
     d.body.appendChild(img);
@@ -496,10 +507,8 @@ async function printRange(from,to){
     $('#printMsg').textContent=`جارٍ التجهيز… ${i} من ${total}`;
     if(i%3===0) await new Promise(r=>setTimeout(r,0));
   }
-  hidePrint();
-  if(printAbort){ toast('أُلغيت الطباعة'); return; }
-  d.querySelector('.s')?.remove();
-  setTimeout(()=>{ $('#printFrame').contentWindow.focus(); $('#printFrame').contentWindow.print(); },200);
+  if(printAbort){ hidePrint(); toast('أُلغيت الطباعة'); return; }
+  await firePrint(d);
 }
 
 /* ---------- دخول وتسجيل ---------- */

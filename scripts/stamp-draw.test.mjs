@@ -48,4 +48,13 @@ function inBox(r){
   inBox(r);
 }
 
+{
+  const peekW = 804, peekH = 1137;
+  const r = stampDraw(peekW, peekH, p, 100, 100);
+  const old = { w: peekW * p.w, h: peekW * p.w };
+  assert.ok(Math.abs(r.h - peekW * p.w * STAMP_AR) < 1e-6);
+  assert.ok(r.h < old.h);
+  assert.ok(r.h / old.h < 0.56);
+}
+
 console.log('ok');
