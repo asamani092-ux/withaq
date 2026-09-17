@@ -450,6 +450,14 @@ function printPeekSingle(){
   },600);
 }
 const loadImg=src=>new Promise((ok,no)=>{const i=new Image();i.onload=()=>ok(i);i.onerror=no;i.src=src});
+/* صندوق الشعار كما هو ظاهر في العارض. زمن ثابت. */
+function stampPosFromBox(box){
+  const st=box&&box.querySelector('.stamp');
+  if(!st) return pos();
+  const br=box.getBoundingClientRect(), sr=st.getBoundingClientRect();
+  const W=br.width||1, H=br.height||1;
+  return { x:Math.max(0,(br.right-sr.right)/W), y:Math.max(0,(sr.top-br.top)/H), w:Math.max(.05,sr.width/W) };
+}
 /* الطباعة: صفحة تلو الأخرى بمقياس ١٫٣٥ ودفعات من ثلاث لترك الواجهة تستجيب. زمن خطي مع عدد الصفحات. */
 async function printRange(from,to){
   if(!(settings.printAllowed||me?.isAdmin)){ toast('الطباعة مقفلة حاليًا'); return; }
@@ -460,9 +468,10 @@ async function printRange(from,to){
   const d=printDoc(V.track.name, total);
   showPrint(`جارٍ التجهيز… 0 من ${total}`);
   const logo=me?.logo?await loadImg(logoUrl()).catch(()=>null):null;
-  const p=pos();
   for(let n=from;n<=to;n++){
     if(printAbort) break;
+    const box=V.holders[n-1];
+    if(box && !box.dataset.done) await renderPage(n);
     const page=await V.doc.getPage(n), vp=page.getViewport({scale:1.35});
     const c=document.createElement('canvas'); c.width=vp.width; c.height=vp.height;
     const ctx=c.getContext('2d',{alpha:false});
@@ -475,7 +484,7 @@ async function printRange(from,to){
       g.addColorStop(0,`rgb(${COVER.c0})`); g.addColorStop(1,`rgb(${COVER.c1})`);
       ctx.fillStyle=g; ctx.fillRect(cx,cy,cw,ch);
       if(logo){
-        const r=stampDraw(vp.width,vp.height,p,logo.width,logo.height);
+        const r=stampDraw(vp.width,vp.height,stampPosFromBox(box),logo.width,logo.height);
         ctx.drawImage(logo, r.x, r.y, r.w, r.h);
       }
     }
