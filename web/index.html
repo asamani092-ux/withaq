@@ -96,8 +96,9 @@ svg{fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-l
 .pg-box{position:relative;background:#fff;box-shadow:0 8px 26px rgba(7,44,73,.18);border-radius:4px}
 .pg-box canvas{display:block;border-radius:4px}
 .pg-box .num{position:absolute;bottom:-20px;inset-inline-end:0;font-size:12.5px;color:var(--muted)}
-.pg-box .side{position:absolute;top:8px;inset-inline-start:8px;background:rgba(7,44,73,.82);color:#fff;font-size:11.5px;border-radius:var(--r-pill);padding:2px 9px}
-.stamp{position:absolute;cursor:grab;touch-action:none;border:1.5px dashed transparent}
+.pg-box .side{position:absolute;top:8px;inset-inline-end:8px;z-index:4;background:rgba(7,44,73,.82);color:#fff;font-size:11.5px;border-radius:var(--r-pill);padding:2px 9px}
+.cover{z-index:1}
+.stamp{position:absolute;z-index:2;cursor:grab;touch-action:none;border:1.5px dashed transparent}
 .stamp.edit{border-color:var(--accent);background:rgba(193,126,90,.08)}
 .stamp img{width:100%;height:100%;object-fit:contain;pointer-events:none;display:block}
 .stamp .hdl{position:absolute;inset-inline-start:-7px;bottom:-7px;width:16px;height:16px;border-radius:50%;background:var(--accent);border:2px solid #fff;cursor:nwse-resize;display:none}
@@ -148,10 +149,13 @@ footer{text-align:center;color:var(--muted);font-size:13.5px;padding:24px 16px 3
 .track-admin .ta-top b{flex:1;min-width:120px}
 .track-admin .ta-id{font-size:12.5px;color:var(--muted)}
 .track-admin .ta-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
-.print-frame{position:fixed;left:0;top:0;width:1px;height:1px;opacity:0;pointer-events:none;border:0}
+.print-frame{position:fixed;left:-10000px;top:0;width:210mm;height:297mm;opacity:1;pointer-events:none;border:0;background:#fff}
 .print-ov{position:fixed;inset:0;z-index:90;background:rgba(7,44,73,.55);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;color:#fff}
 .print-ov p{margin:0;font-size:17px;font-weight:700}
-@media print{body>*{display:none!important}}
+@media print{
+  body>*:not(#printFrame){display:none!important}
+  #printFrame{position:static!important;left:auto!important;width:100%!important;height:auto!important;opacity:1!important}
+}
 </style>
 </head>
 <body>
@@ -324,6 +328,6 @@ footer{text-align:center;color:var(--muted);font-size:13.5px;padding:24px 16px 3
 </div>
 <iframe id="printFrame" class="print-frame" title="طباعة"></iframe>
 <div class="toast" id="toast"></div>
-<script type="module" src="app.js?v=print4"></script>
+<script type="module" src="app.js?v=print5"></script>
 </body>
 </html>
