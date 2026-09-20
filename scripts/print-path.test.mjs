@@ -14,7 +14,7 @@ assert.match(html, /app\.js\?v=print8/);
 assert.match(html, /id="vPrintMenu"/);
 assert.match(html, /id="printAll"/);
 assert.match(html, /data-scope="page"/);
-assert.match(html, /data-scope="all"/);
+assert.match(html, /id="btnSettings"[^>]*>شعاري</);
 
 assert.match(js, /contentWindow/);
 assert.match(js, /w\.print\(\)/);
