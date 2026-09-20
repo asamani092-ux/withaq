@@ -71,6 +71,30 @@ function sheetConfirm({title, body, confirmText='تأكيد', cancelText='إلغ
     {label:confirmText, kind:danger?'btn-a':'btn-a', value:true}
   ]}); });
 }
+function sheetAsk({title, body, placeholder='', okText='متابعة'}){
+  return new Promise(res=>{
+    dlgResolve=res;
+    $('#dlgTitle').textContent=title;
+    $('#dlgSub').classList.add('hidden');
+    $('#dlgBody').textContent=body;
+    const host=$('#dlgActions'); host.innerHTML='';
+    const inp=document.createElement('input');
+    inp.type='text'; inp.placeholder=placeholder; inp.setAttribute('dir','ltr');
+    inp.style.cssText='width:100%;border:1px solid var(--line);border-radius:12px;padding:10px 12px;font:inherit';
+    const row=document.createElement('div');
+    row.className='rowx'; row.style.cssText='width:100%;justify-content:flex-end';
+    const cancel=document.createElement('button');
+    cancel.type='button'; cancel.className='btn btn-line'; cancel.style.padding='9px 18px'; cancel.textContent='إلغاء';
+    cancel.onclick=()=>closeDlg(null);
+    const ok=document.createElement('button');
+    ok.type='button'; ok.className='btn btn-a'; ok.style.padding='9px 18px'; ok.textContent=okText;
+    ok.onclick=()=>closeDlg(inp.value);
+    inp.addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); ok.click(); } });
+    host.append(inp, row); row.append(cancel, ok);
+    $('#dlgSheet').classList.add('on');
+    setTimeout(()=>inp.focus(),50);
+  });
+}
 function sheetAlert({title, body, okText='حسنًا'}){
   return new Promise(res=>{ dlgResolve=res; openDlg({title, body, actions:[
     {label:okText, kind:'btn-a', value:true}
@@ -206,6 +230,8 @@ function openPeek(t){
   $('#viewer').classList.add('on');
   $('#vTitle').innerHTML=`${t.name} <small>معاينة ورقتين</small>`;
   $('#vLogo').classList.add('hidden');
+  $('#printAll').classList.add('hidden');
+  $('#printRangeBtn').classList.add('hidden');
   $('#vPrint').disabled=false;
   $('#vCount').textContent=PEEK.length; $('#vPage').max=PEEK.length; $('#vPage').value=1;
   $('#vStage').innerHTML=PEEK.map((side,i)=>`
@@ -231,10 +257,12 @@ async function openViewer(track){
   catch(e){ $('#vStage').innerHTML='<p style="color:#a33;text-align:center;max-width:44ch">تعذّر فتح الملف. تأكد أنك مسجّل الدخول وأن الملف مرفوع إلى التخزين.</p>'; return; }
   $('#vCount').textContent=V.doc.numPages; $('#vPage').max=V.doc.numPages;
   $('#vLogo').classList.remove('hidden');
+  $('#printAll').classList.remove('hidden');
+  $('#printRangeBtn').classList.remove('hidden');
   $('#vPrint').disabled=!(settings.printAllowed||me?.isAdmin);
   await layout(); goTo(1);
 }
-$('#vClose').onclick=()=>{ $('#viewer').classList.remove('on'); V.obs?.disconnect(); $('#vStage').innerHTML=''; V.doc=null; V.holders=[]; };
+$('#vClose').onclick=()=>{ $('#viewer').classList.remove('on'); pm.classList.remove('open'); V.obs?.disconnect(); $('#vStage').innerHTML=''; V.doc=null; V.holders=[]; };
 
 async function layout(){
   V.obs?.disconnect(); V.holders=[]; const stage=$('#vStage'); stage.innerHTML='';
@@ -411,12 +439,28 @@ document.addEventListener('keydown',e=>{
 });
 $('#vStage').addEventListener('contextmenu',e=>e.preventDefault());
 
-/* ---------- الطباعة (فردية تلقائيًا: الصفحة الظاهرة فقط، صفحة في كل أمر) ---------- */
-$('#vPrint').onclick=async()=>{
-  if($('#vPrint').disabled) return;
+/* ---------- الطباعة ---------- */
+const pm=$('#vPrintMenu');
+$('#vPrint').onclick=()=>{ if(!$('#vPrint').disabled) pm.classList.toggle('open'); };
+document.addEventListener('click',e=>{ if(!pm.contains(e.target)) pm.classList.remove('open'); });
+pm.querySelectorAll('.list button').forEach(b=>b.onclick=async()=>{
+  pm.classList.remove('open');
   if(V.mode==='peek'){ printPeekSingle(); return; }
-  await printRange(V.cur, V.cur);
-};
+  let from=V.cur, to=V.cur;
+  if(b.dataset.scope==='all'){ from=1; to=V.doc.numPages; }
+  if(b.dataset.scope==='range'){
+    const v=await sheetAsk({
+      title:'نطاق الصفحات',
+      body:`من 1 إلى ${V.doc.numPages} — مثال: 3-12`,
+      placeholder:'3-12'
+    });
+    if(!v) return;
+    const m=String(v).match(/(\d+)\s*-\s*(\d+)/);
+    if(!m){ toast('صيغة غير صحيحة'); return; }
+    from=+m[1]; to=+m[2];
+  }
+  await printRange(from, to);
+});
 let printAbort=false;
 $('#printCancel').onclick=()=>{ printAbort=true; };
 function showPrint(m){ $('#printMsg').textContent=m; $('#printOverlay').classList.remove('hidden'); }

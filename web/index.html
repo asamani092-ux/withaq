@@ -235,7 +235,14 @@ footer{text-align:center;color:var(--muted);font-size:13.5px;padding:24px 16px 3
     <button id="vZoomOut">−</button>
     <button id="vZoomIn">+</button>
     <button id="vLogo" class="hidden">ضبط الشعار</button>
-    <button id="vPrint">طباعة</button>
+    <span class="menu" id="vPrintMenu">
+      <button id="vPrint">طباعة</button>
+      <span class="list">
+        <button type="button" data-scope="page">الصفحة الحالية</button>
+        <button type="button" data-scope="range" id="printRangeBtn">نطاق صفحات…</button>
+        <button type="button" data-scope="all" id="printAll">الملف كاملًا</button>
+      </span>
+    </span>
   </div>
   <div class="vstage" id="vStage"></div>
 </div>
@@ -334,6 +341,6 @@ footer{text-align:center;color:var(--muted);font-size:13.5px;padding:24px 16px 3
 </div>
 <iframe id="printFrame" class="print-frame" title="طباعة"></iframe>
 <div class="toast" id="toast"></div>
-<script type="module" src="app.js?v=print7"></script>
+<script type="module" src="app.js?v=print8"></script>
 </body>
 </html>
