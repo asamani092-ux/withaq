@@ -80,7 +80,7 @@ svg{fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-l
 .track:hover{transform:translateY(-4px);border-color:var(--accent)}
 .track .thumb{aspect-ratio:1/1.414;background:#eef2f4;position:relative;display:grid;place-items:center;padding:6px}
 .track .thumb canvas,.track .thumb img{max-width:100%;max-height:100%;width:100%;height:100%;object-fit:contain;display:block}
-.track .thumb .badge{position:absolute;top:9px;inset-inline-start:9px;background:rgba(255,255,255,.95);color:var(--navy);border-radius:var(--r-pill);padding:3px 11px;font-size:12.5px;font-weight:700}
+.track .thumb .badge{position:absolute;top:9px;inset-inline-start:9px;z-index:2;background:rgba(255,255,255,.95);color:var(--navy);border-radius:var(--r-pill);padding:3px 11px;font-size:12.5px;font-weight:700}
 .track .body{padding:13px 15px 15px;display:flex;flex-direction:column;gap:9px}
 .track .body h3{margin:0;font-size:17.5px;font-weight:700}
 .track .meta{color:var(--muted);font-size:13.5px}
@@ -341,6 +341,6 @@ footer{text-align:center;color:var(--muted);font-size:13.5px;padding:24px 16px 3
 </div>
 <iframe id="printFrame" class="print-frame" title="طباعة"></iframe>
 <div class="toast" id="toast"></div>
-<script type="module" src="app.js?v=print8"></script>
+<script type="module" src="app.js?v=print9"></script>
 </body>
 </html>
